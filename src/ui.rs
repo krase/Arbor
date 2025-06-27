@@ -1,9 +1,7 @@
 use crate::utils::{
     bottom_right_area, convert_to_listitems, format_size, mode_to_string, popup_area,
 };
-use crate::{
-    Action, FileContent, FileManager, FsEntryType, InteractionMode, PopupType, PreviewContent,
-};
+use crate::{Action, FileContent, FileManager, FsEntry, FsEntryType, InteractionMode, PopupType, PreviewContent};
 use ratatui::prelude::*;
 use ratatui::{
     layout::{Constraint, Flex},
@@ -15,55 +13,19 @@ use ratatui::{
 
 impl FileManager {
     pub fn render(&mut self, f: &mut Frame) {
-        let selection_state = &mut self.selection;
+        let selection_state = &mut self.selection_left;
         let parent_files = &self.parent_view.entries;
-        let current_entries = &self.entries;
         let clipboard_action = &self.clipboard.action;
         let cursor_index = selection_state.selected();
 
-        let list_current_items: Vec<ListItem> = current_entries
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| {
-                let (bar, bar_style) = if entry.is_selected {
-                    match clipboard_action {
-                        Action::Move => ("▌", Style::default().fg(Color::Red)),
-                        Action::Copy => ("▌", Style::default().fg(Color::Green)),
-                        Action::None => ("▌", Style::default().fg(Color::Yellow)),
-                    }
-                } else {
-                    (" ", Style::default())
-                };
-
-                let icon = match entry.entry_type {
-                    FsEntryType::Directory => "📁",
-                    FsEntryType::File => "📄",
-                };
-
-                let is_cursor_row = cursor_index == Some(index);
-
-                let text = Line::from(vec![
-                    Span::styled(bar, bar_style),
-                    Span::raw(" "),
-                    Span::styled(
-                        format!("{} {}", icon, entry.name),
-                        if is_cursor_row {
-                            Style::default()
-                                .bg(Color::Blue)
-                                .fg(Color::Black)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default()
-                        },
-                    ),
-                ]);
-
-                ListItem::new(text)
-            })
-            .collect();
+        let list_left_items = Self::list_files(&self.left_entries, clipboard_action, cursor_index);
+        let list_right_items = Self::list_files(&self.right_entries, clipboard_action, cursor_index);
 
         let list_parent_items: Vec<ListItem> = convert_to_listitems(parent_files);
-        let current_directory = Paragraph::new(self.current_path.to_string_lossy());
+
+        let left_directory = Paragraph::new(self.left_path.to_string_lossy());
+        let right_directory = Paragraph::new(self.right_path.to_string_lossy());
+        
         let block = Block::bordered().border_type(Rounded).borders(Borders::ALL);
         let empty_lists = Paragraph::new("No Files")
             .alignment(Alignment::Center)
@@ -76,7 +38,13 @@ impl FileManager {
         ])
         .split(f.area());
 
-        let entry_lists = List::new(list_current_items)
+        let entry_lists_left = List::new(list_left_items)
+            .highlight_style(
+                Style::default().bg(Color::Blue), //     .fg(Color::Black)
+            )
+            .add_modifier(Modifier::BOLD)
+            .block(block.clone());
+        let entry_lists_right = List::new(list_right_items)
             .highlight_style(
                 Style::default().bg(Color::Blue), //     .fg(Color::Black)
             )
@@ -88,66 +56,35 @@ impl FileManager {
             .direction(Direction::Horizontal)
             .constraints(vec![
                 Constraint::Percentage(20),
-                Constraint::Percentage(50),
-                Constraint::Percentage(30),
+                Constraint::Percentage(40),
+                Constraint::Percentage(40),
             ])
             .split(main_layout[1]);
 
-        match &self.preview {
-            PreviewContent::Directory(sub_files) => {
-                let list_sub_items: Vec<ListItem> = convert_to_listitems(sub_files);
-
-                let preview_directory_list = List::new(list_sub_items);
-                let inner_area = block.inner(layout[2]);
-
-                f.render_widget(Clear, layout[2]);
-                f.render_widget(&block, layout[2]);
-
-                if preview_directory_list.is_empty() {
-                    f.render_widget(&empty_lists, layout[2]);
-                } else {
-                    f.render_widget(preview_directory_list, inner_area);
-                }
-            }
-            PreviewContent::File(FileContent::Text(data)) => {
-                let preview_file_content_txt =
-                    Paragraph::new(String::from(data)).wrap(Wrap { trim: true });
-
-                let inner_area = block.inner(layout[2]);
-
-                f.render_widget(Clear, layout[2]);
-                f.render_widget(&block, layout[2]);
-                f.render_widget(preview_file_content_txt, inner_area);
-            }
-            PreviewContent::File(FileContent::Binary(data)) => {
-                let preview_file_content_binary =
-                    Paragraph::new(data.to_string()).wrap(Wrap { trim: true });
-                let inner_area = block.inner(layout[2]);
-
-                f.render_widget(Clear, layout[2]);
-                f.render_widget(&block, layout[2]);
-                f.render_widget(preview_file_content_binary, inner_area);
-            }
-        }
-
-        f.render_widget(current_directory, main_layout[0]);
+        f.render_widget(left_directory, main_layout[0]);
+        f.render_widget(right_directory, main_layout[0]);
         f.render_widget(list_parent_files, layout[0]);
 
-        if entry_lists.is_empty() {
+        if entry_lists_left.is_empty() {
             f.render_widget(&empty_lists, layout[1]);
         } else {
-            f.render_stateful_widget(entry_lists, layout[1], selection_state);
+            f.render_stateful_widget(entry_lists_left, layout[1], selection_state);
+        }
+        if entry_lists_right.is_empty() {
+            f.render_widget(&empty_lists, layout[1]);
+        } else {
+            f.render_stateful_widget(entry_lists_right, layout[2], selection_state);
         }
 
         if let PopupType::Confirm = &self.popup {
             let mut confirm_file_list = Paragraph::new("").wrap(Wrap { trim: false });
 
-            match self.mode {
+            match self.mode_left {
                 InteractionMode::Normal => {
-                    if let Some(index) = self.selection.selected() {
-                        if let Some(file) = self.entries.get(index) {
+                    if let Some(index) = self.selection_left.selected() {
+                        if let Some(file) = self.left_entries.get(index) {
                             let name = file.name.clone();
-                            let path = self.current_path.join(name).to_string_lossy().to_string();
+                            let path = self.left_path.join(name).to_string_lossy().to_string();
 
                             confirm_file_list = Paragraph::new(path)
                                 .alignment(Alignment::Left)
@@ -287,7 +224,7 @@ impl FileManager {
             }
         }
 
-        let mode_display = match self.mode {
+        let mode_display = match self.mode_left {
             InteractionMode::Normal => Span::styled(
                 "🔵 Mode: Normal",
                 Style::default()
@@ -327,5 +264,49 @@ impl FileManager {
             .alignment(Alignment::Right);
 
         f.render_widget(per_paragraph, bottom_layout[1]);
+    }
+
+    fn list_files<'a>(current_entries: &'a Vec<FsEntry>, clipboard_action: &Action, cursor_index: Option<usize>) -> Vec<ListItem<'a>> {
+        let list_current_items: Vec<ListItem> = current_entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let (bar, bar_style) = if entry.is_selected {
+                    match clipboard_action {
+                        Action::Move => ("▌", Style::default().fg(Color::Red)),
+                        Action::Copy => ("▌", Style::default().fg(Color::Green)),
+                        Action::None => ("▌", Style::default().fg(Color::Yellow)),
+                    }
+                } else {
+                    (" ", Style::default())
+                };
+
+                let icon = match entry.entry_type {
+                    FsEntryType::Directory => "📁",
+                    FsEntryType::File => "📄",
+                };
+
+                let is_cursor_row = cursor_index == Some(index);
+
+                let text = Line::from(vec![
+                    Span::styled(bar, bar_style),
+                    Span::raw(" "),
+                    Span::styled(
+                        format!("{} {}", icon, entry.name),
+                        if is_cursor_row {
+                            Style::default()
+                                .bg(Color::Blue)
+                                .fg(Color::Black)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        },
+                    ),
+                ]);
+
+                ListItem::new(text)
+            })
+            .collect();
+        list_current_items
     }
 }

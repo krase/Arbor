@@ -70,11 +70,18 @@ pub struct Clipboard {
 #[derive(Debug)]
 pub struct FileManager {
     parent_view: ParentView,
-    current_path: PathBuf,
-    entries: Vec<FsEntry>,
-    preview: PreviewContent,
-    selection: ListState,
-    mode: InteractionMode,
+    
+    left_path: PathBuf,
+    right_path: PathBuf,
+    
+    left_entries: Vec<FsEntry>,
+    right_entries: Vec<FsEntry>,
+
+    selection_left: ListState,
+    selection_right: ListState,
+    mode_left: InteractionMode,
+    mode_right: InteractionMode,
+    
     notify: Option<Notification>,
     clipboard: Clipboard,
     input_buffer: String,
@@ -91,6 +98,7 @@ pub struct ParentView {
 impl FileManager {
     fn new(start_path: &PathBuf) -> Result<Self, std::io::Error> {
         let (entries, parent_path, parent_entries) = get_state_data(start_path).unwrap();
+        let (right_entries, _, _) = get_state_data(start_path).unwrap();
 
         let mut state = Self {
             parent_view: ParentView {
@@ -98,11 +106,16 @@ impl FileManager {
                 entries: parent_entries,
                 selection: ListState::default(),
             },
-            current_path: start_path.clone(),
-            entries,
-            preview: PreviewContent::Directory(vec![]),
-            selection: ListState::default().with_selected(Some(0)),
-            mode: InteractionMode::Normal,
+            left_path: start_path.clone(),
+            left_entries: entries,
+            selection_left: ListState::default().with_selected(Some(0)),
+            mode_left: InteractionMode::Normal,
+            
+            right_path: start_path.clone(),
+            right_entries: right_entries,
+            selection_right: ListState::default().with_selected(Some(0)),
+            mode_right: InteractionMode::Normal,
+            
             notify: None,
             clipboard: Clipboard {
                 paths: vec![],
@@ -112,16 +125,16 @@ impl FileManager {
             popup: PopupType::None,
         };
 
-        state.refresh_preview();
+        state.refresh_right_view();
         state.update_parent_selection();
         Ok(state)
     }
 
-    fn refresh_current_directory(&mut self, new_path: PathBuf) {
+    fn refresh_left_directory(&mut self, new_path: PathBuf) {
         match get_state_data(&new_path) {
             Ok((entries, parent_path, parent_entries)) => {
-                self.current_path = new_path;
-                self.entries = entries;
+                self.left_path = new_path;
+                self.left_entries = entries;
                 self.parent_view.path = parent_path;
                 self.parent_view.entries = parent_entries;
             }
@@ -129,23 +142,30 @@ impl FileManager {
         }
     }
 
-    fn refresh_preview_with_directory(&mut self, items: Vec<FsEntry>) {
-        self.preview = PreviewContent::Directory(items);
-        self.update_parent_selection();
+    fn refresh_right_directory(&mut self, new_path: PathBuf) {
+        match get_state_data(&new_path) {
+            Ok((entries, parent_path, parent_entries)) => {
+                //self.current_path = new_path;
+                self.right_entries = entries;
+                //self.parent_view.path = parent_path;
+                //self.parent_view.entries = parent_entries;
+            }
+            Err(e) => self.show_notification(e.to_string()),
+        }
     }
 
-    fn refresh_preview_with_text_file(&mut self, content: String) {
-        self.preview = PreviewContent::File(FileContent::Text(content));
+    /*fn refresh_preview_with_text_file(&mut self, content: String) {
+        self.right_entries = PreviewContent::File(FileContent::Text(content));
         self.update_parent_selection();
     }
 
     fn refresh_preview_with_binary_file(&mut self, content: String) {
-        self.preview = PreviewContent::File(FileContent::Binary(content));
-    }
+        self.right_entries = PreviewContent::File(FileContent::Binary(content));
+    }*/
 
     fn delete_selected(&mut self) {
         if let Some(entry) = self.get_selected_index_entry() {
-            let path = self.current_path.join(&entry.name);
+            let path = self.left_path.join(&entry.name);
             let result = match entry.entry_type {
                 FsEntryType::File => fs::remove_file(&path),
                 FsEntryType::Directory => fs::remove_dir_all(&path),
@@ -153,8 +173,8 @@ impl FileManager {
 
             if result.is_ok() {
                 self.popup = PopupType::None;
-                self.refresh_current_directory(self.current_path.clone());
-                self.refresh_preview();
+                self.refresh_left_directory(self.left_path.clone());
+                self.refresh_right_directory(self.right_path.clone());
             } else if let Err(err) = result {
                 self.show_notification(format!("Failed to delete {:?}: {}", path, err));
             }
@@ -170,18 +190,18 @@ impl FileManager {
             };
         }
 
-        self.refresh_current_directory(self.current_path.clone());
+        self.refresh_left_directory(self.left_path.clone());
         self.toggle_confirmation_popup();
-        self.mode = InteractionMode::Normal;
+        self.mode_left = InteractionMode::Normal;
     }
 
     fn rename_selected(&mut self, input: &mut str) {
         if let Some(entry) = self.get_selected_index_entry() {
-            let old_path = self.current_path.join(&entry.name);
-            let new_path = self.current_path.join(input.trim_end_matches('/'));
+            let old_path = self.left_path.join(&entry.name);
+            let new_path = self.left_path.join(input.trim_end_matches('/'));
 
             if fs::rename(&old_path, &new_path).is_ok() {
-                self.refresh_current_directory(self.current_path.clone());
+                self.refresh_left_directory(self.left_path.clone());
                 self.input_buffer.clear();
                 self.popup = PopupType::None;
             }
@@ -194,7 +214,7 @@ impl FileManager {
         let mut segments: Vec<&str> = trimmed_input.split('/').collect();
 
         if let Some(name) = segments.pop() {
-            let mut path = self.current_path.clone();
+            let mut path = self.left_path.clone();
             for segment in segments {
                 path.push(segment);
             }
@@ -229,25 +249,25 @@ impl FileManager {
     }
 
     fn on_create_success(&mut self) {
-        self.refresh_current_directory(self.current_path.clone());
-        self.refresh_preview();
+        self.refresh_left_directory(self.left_path.clone());
+        self.refresh_right_directory(self.right_path.clone());
         self.input_buffer.clear();
         self.popup = PopupType::None;
     }
 
     fn set_clipboard_entries(&mut self) {
-        if self.mode == InteractionMode::Normal
-            && !self.entries.iter().any(|entry| entry.is_selected)
+        if self.mode_left == InteractionMode::Normal
+            && !self.left_entries.iter().any(|entry| entry.is_selected)
         {
-            if let Some(current_selection) = self.selection.selected() {
-                if let Some(selected_item) = self.entries.get_mut(current_selection) {
+            if let Some(current_selection) = self.selection_left.selected() {
+                if let Some(selected_item) = self.left_entries.get_mut(current_selection) {
                     selected_item.is_selected = true;
                 }
             }
 
             if let Some(entry) = self.get_selected_index_entry() {
                 self.clipboard.paths =
-                    vec![self.current_path.join(&entry.name).canonicalize().unwrap()];
+                    vec![self.left_path.join(&entry.name).canonicalize().unwrap()];
             }
         } else {
             self.clipboard.paths = self.get_selected_paths();
@@ -267,7 +287,7 @@ impl FileManager {
     fn paste_clipboard(&mut self) {
         let clipboard = self.clipboard.clone();
         for src in clipboard.paths {
-            let dst = self.current_path.join(src.file_name().unwrap());
+            let dst = self.left_path.join(src.file_name().unwrap());
             if src.is_file() {
                 match self.clipboard.action {
                     Action::Move => {
@@ -300,51 +320,26 @@ impl FileManager {
                 }
             }
         }
-        self.refresh_current_directory(self.current_path.clone());
+        self.refresh_left_directory(self.left_path.clone());
         self.clipboard.action = Action::None
     }
 
     fn get_selected_paths(&self) -> Vec<PathBuf> {
-        self.entries
+        self.left_entries
             .iter()
             .filter(|entry| entry.is_selected)
-            .filter_map(|entry| self.current_path.join(&entry.name).canonicalize().ok())
+            .filter_map(|entry| self.left_path.join(&entry.name).canonicalize().ok())
             .collect()
     }
 
-    fn refresh_preview(&mut self) {
-        if let Some(entry) = self.get_selected_index_entry() {
-            let path = self.current_path.join(&entry.name);
-            match entry.entry_type {
-                FsEntryType::Directory => {
-                    let path_clone = path.clone();
-                    let (tx, rx) = mpsc::channel();
-
-                    thread::spawn(move || {
-                        let result = utils::list_dir(&path_clone);
-                        let _ = tx.send(result);
-                    });
-
-                    if let Ok(result) = rx.recv() {
-                        match result {
-                            Ok(items) => self.refresh_preview_with_directory(items),
-                            Err(e) => self.show_notification(e.to_string()),
-                        }
-                    }
-                }
-
-                FsEntryType::File => match utils::read_valid_file(&path) {
-                    Ok(text) => self.refresh_preview_with_text_file(text),
-                    Err(e) => self.refresh_preview_with_binary_file(e.to_string()),
-                },
-            }
-        }
+    fn refresh_right_view(&mut self) {
+        // TODO remove
     }
 
     fn select_current(&mut self) {
-        if let InteractionMode::MultiSelect = self.mode {
-            if let Some(index) = self.selection.selected() {
-                if let Some(entry) = self.entries.get_mut(index) {
+        if let InteractionMode::MultiSelect = self.mode_left {
+            if let Some(index) = self.selection_left.selected() {
+                if let Some(entry) = self.left_entries.get_mut(index) {
                     entry.is_selected = true;
                 }
             }
@@ -352,35 +347,35 @@ impl FileManager {
     }
 
     fn deselect_all(&mut self) {
-        if let InteractionMode::Normal = self.mode {
-            for entry in &mut self.entries {
+        if let InteractionMode::Normal = self.mode_left {
+            for entry in &mut self.left_entries {
                 entry.is_selected = false;
             }
-            self.refresh_current_directory(self.current_path.clone());
+            self.refresh_left_directory(self.left_path.clone());
         }
     }
 
     fn navigate_down(&mut self) {
-        self.selection.select_next();
-        if self.selection.selected().unwrap_or(0) >= self.entries.len() {
-            self.selection.select(Some(0));
+        self.selection_left.select_next();
+        if self.selection_left.selected().unwrap_or(0) >= self.left_entries.len() {
+            self.selection_left.select(Some(0));
         }
         self.select_current();
-        self.refresh_preview();
+        self.refresh_right_view();
     }
 
     fn navigate_up(&mut self) {
-        let len = self.entries.len();
-        if self.selection.selected().unwrap_or(0) == 0 {
-            self.selection.select(Some(len));
+        let len = self.left_entries.len();
+        if self.selection_left.selected().unwrap_or(0) == 0 {
+            self.selection_left.select(Some(len));
         }
-        self.selection.select_previous();
+        self.selection_left.select_previous();
         self.select_current();
-        self.refresh_preview();
+        self.refresh_right_view();
     }
 
     fn update_parent_selection(&mut self) {
-        if let Some(current_name) = self.current_path.file_name().map(|n| n.to_string_lossy()) {
+        if let Some(current_name) = self.left_path.file_name().map(|n| n.to_string_lossy()) {
             if let Some(index) = self
                 .parent_view
                 .entries
@@ -394,27 +389,27 @@ impl FileManager {
 
     fn navigate_to_parent(&mut self) {
         if let Some(ref parent_path) = self.parent_view.path {
-            self.refresh_current_directory(parent_path.clone());
-            self.selection = self.parent_view.selection.clone();
-            self.refresh_preview();
+            self.refresh_left_directory(parent_path.clone());
+            self.selection_left = self.parent_view.selection.clone();
+            self.refresh_right_view();
         }
     }
 
     fn navigate_to_child(&mut self) {
         if let Some(entry) = self.get_selected_index_entry() {
             if let FsEntryType::Directory = entry.entry_type {
-                let mut path = self.current_path.clone();
+                let mut path = self.left_path.clone();
                 path.push(&entry.name);
-                self.refresh_current_directory(path);
-                self.parent_view.selection = self.selection.clone();
-                self.selection = ListState::default().with_selected(Some(0));
-                self.refresh_preview();
+                self.refresh_left_directory(path);
+                self.parent_view.selection = self.selection_left.clone();
+                self.selection_left = ListState::default().with_selected(Some(0));
+                self.refresh_right_view();
             }
         }
     }
 
     fn toggle_confirmation_popup(&mut self) {
-        if !self.entries.is_empty() {
+        if !self.left_entries.is_empty() {
             self.popup = match self.popup {
                 PopupType::Confirm => PopupType::None,
                 _ => PopupType::Confirm,
@@ -439,16 +434,16 @@ impl FileManager {
     }
 
     fn get_selected_index_entry(&self) -> Option<&FsEntry> {
-        self.selection
+        self.selection_left
             .selected()
-            .and_then(|index| self.entries.get(index))
+            .and_then(|index| self.left_entries.get(index))
     }
 }
 
 fn main() -> std::io::Result<()> {
     let terminal = ratatui::init();
 
-    let start_dir = PathBuf::from(".");
+    let start_dir = PathBuf::from("/home/krase");
     let absolute_path = start_dir.canonicalize().expect("Failed to resolve path");
 
     let exit_result = FileManager::new(&absolute_path).unwrap().run(terminal);

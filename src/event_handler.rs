@@ -1,5 +1,5 @@
 use crate::{FileManager, InteractionMode, PopupType};
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::DefaultTerminal;
 use std::io;
 use std::time::Duration;
@@ -13,7 +13,7 @@ impl FileManager {
                     if let PopupType::Confirm = self.popup.clone() {
                         match key.code {
                             KeyCode::Char('n') => self.toggle_confirmation_popup(),
-                            KeyCode::Char('y') => match self.mode {
+                            KeyCode::Char('y') => match self.mode_left {
                                 InteractionMode::Normal => self.delete_selected(),
                                 InteractionMode::MultiSelect => self.delete_multiple(),
                             },
@@ -57,16 +57,16 @@ impl FileManager {
                         }
                         continue;
                     }
-                    if let InteractionMode::Normal = self.mode {
+                    if let InteractionMode::Normal = self.mode_left {
                         match key.code {
                             KeyCode::Char('q') => break,
-                            KeyCode::Char('j') => self.navigate_down(),
-                            KeyCode::Char('k') => self.navigate_up(),
-                            KeyCode::Char('h') => self.navigate_to_parent(),
-                            KeyCode::Char('l') => self.navigate_to_child(),
+                            KeyCode::Char('j') | KeyCode::Down => self.navigate_down(),
+                            KeyCode::Char('k') | KeyCode::Up => self.navigate_up(),
+                            KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace => self.navigate_to_parent(),
+                            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => self.navigate_to_child(),
                             KeyCode::Char('d') => self.toggle_confirmation_popup(),
                             KeyCode::Char('r') => {
-                                if !self.entries.is_empty() {
+                                if !self.left_entries.is_empty() {
                                     self.popup = PopupType::Rename
                                 }
                             }
@@ -75,12 +75,20 @@ impl FileManager {
                             KeyCode::Char('x') => self.move_selected_entries(),
                             KeyCode::Char('p') => self.paste_clipboard(),
                             KeyCode::Esc => self.deselect_all(),
+                            KeyCode::Char(' ') => {
+                                if let Some(current_selection) = self.selection_left.selected() {
+                                    if let Some(selected_item) = self.left_entries.get_mut(current_selection)
+                                    {
+                                        selected_item.is_selected ^= true;
+                                    }
+                                }
+                            }
                             KeyCode::Char('v') => {
-                                self.mode = InteractionMode::MultiSelect;
-                                if let InteractionMode::MultiSelect = self.mode {
-                                    if let Some(current_selection) = self.selection.selected() {
+                                self.mode_left = InteractionMode::MultiSelect;
+                                if let InteractionMode::MultiSelect = self.mode_left {
+                                    if let Some(current_selection) = self.selection_left.selected() {
                                         if let Some(selected_item) =
-                                            self.entries.get_mut(current_selection)
+                                            self.left_entries.get_mut(current_selection)
                                         {
                                             selected_item.is_selected = true;
                                         }
@@ -90,13 +98,21 @@ impl FileManager {
                             _ => {}
                         }
                     }
-                    if let InteractionMode::MultiSelect = self.mode {
+                    if let InteractionMode::MultiSelect = self.mode_left {
                         match key.code {
-                            KeyCode::Char('j') => self.navigate_down(),
-                            KeyCode::Char('k') => self.navigate_up(),
+                            KeyCode::Char('j') | KeyCode::Down => self.navigate_down(),
+                            KeyCode::Char('k') | KeyCode::Up => self.navigate_up(),
                             KeyCode::Char('d') => self.toggle_confirmation_popup(),
+                            KeyCode::Char(' ') => {
+                                if let Some(current_selection) = self.selection_left.selected() {
+                                    if let Some(selected_item) = self.left_entries.get_mut(current_selection)
+                                    {
+                                        selected_item.is_selected ^= true;
+                                    }
+                                }
+                            }
                             KeyCode::Char('q') => break,
-                            KeyCode::Esc => self.mode = InteractionMode::Normal,
+                            KeyCode::Esc => self.mode_left = InteractionMode::Normal,
                             _ => {}
                         }
                     }
