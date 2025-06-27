@@ -13,18 +13,18 @@ use ratatui::{
 
 impl FileManager {
     pub fn render(&mut self, f: &mut Frame) {
-        let selection_state = &mut self.selection_left;
-        let parent_files = &self.parent_view.entries;
+        let selection_state = &mut self.left_pane.selection;
+        //let parent_files = &self.parent_view.entries;
         let clipboard_action = &self.clipboard.action;
         let cursor_index = selection_state.selected();
 
-        let list_left_items = Self::list_files(&self.left_entries, clipboard_action, cursor_index);
-        let list_right_items = Self::list_files(&self.right_entries, clipboard_action, cursor_index);
+        let list_left_items = Self::list_files(&self.left_pane.entries, clipboard_action, cursor_index);
+        let list_right_items = Self::list_files(&self.right_pane.entries, clipboard_action, cursor_index);
 
-        let list_parent_items: Vec<ListItem> = convert_to_listitems(parent_files);
+        //let list_parent_items: Vec<ListItem> = convert_to_listitems(parent_files);
 
-        let left_directory = Paragraph::new(self.left_path.to_string_lossy());
-        let right_directory = Paragraph::new(self.right_path.to_string_lossy());
+        let left_directory = Paragraph::new(self.left_pane.path.to_string_lossy());
+        let right_directory = Paragraph::new(self.right_pane.path.to_string_lossy());
         
         let block = Block::bordered().border_type(Rounded).borders(Borders::ALL);
         let empty_lists = Paragraph::new("No Files")
@@ -32,7 +32,7 @@ impl FileManager {
             .block(block.clone());
 
         let main_layout = Layout::vertical([
-            Constraint::Length(1),
+            //Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
         ])
@@ -50,41 +50,41 @@ impl FileManager {
             )
             .add_modifier(Modifier::BOLD)
             .block(block.clone());
-        let list_parent_files = List::new(list_parent_items).block(block.clone());
+        //let list_parent_files = List::new(list_parent_items).block(block.clone());
 
         let layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![
-                Constraint::Percentage(20),
-                Constraint::Percentage(40),
-                Constraint::Percentage(40),
+                //Constraint::Percentage(20),
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
             ])
-            .split(main_layout[1]);
+            .split(main_layout[0]);
 
         f.render_widget(left_directory, main_layout[0]);
         f.render_widget(right_directory, main_layout[0]);
-        f.render_widget(list_parent_files, layout[0]);
+        //f.render_widget(list_parent_files, layout[0]);
 
         if entry_lists_left.is_empty() {
-            f.render_widget(&empty_lists, layout[1]);
+            f.render_widget(&empty_lists, layout[0]);
         } else {
-            f.render_stateful_widget(entry_lists_left, layout[1], selection_state);
+            f.render_stateful_widget(entry_lists_left, layout[0], selection_state);
         }
         if entry_lists_right.is_empty() {
-            f.render_widget(&empty_lists, layout[1]);
+            f.render_widget(&empty_lists, layout[0]);
         } else {
-            f.render_stateful_widget(entry_lists_right, layout[2], selection_state);
+            f.render_stateful_widget(entry_lists_right, layout[1], selection_state);
         }
 
         if let PopupType::Confirm = &self.popup {
             let mut confirm_file_list = Paragraph::new("").wrap(Wrap { trim: false });
 
-            match self.mode_left {
+            match self.left_pane.mode {
                 InteractionMode::Normal => {
-                    if let Some(index) = self.selection_left.selected() {
-                        if let Some(file) = self.left_entries.get(index) {
+                    if let Some(index) = self.left_pane.selection.selected() {
+                        if let Some(file) = self.left_pane.entries.get(index) {
                             let name = file.name.clone();
-                            let path = self.left_path.join(name).to_string_lossy().to_string();
+                            let path = self.left_pane.path.join(name).to_string_lossy().to_string();
 
                             confirm_file_list = Paragraph::new(path)
                                 .alignment(Alignment::Left)
@@ -210,7 +210,7 @@ impl FileManager {
         let bottom_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(main_layout[2]);
+            .split(main_layout[1]);
 
         let mut size_display = Span::raw("");
 
@@ -224,7 +224,7 @@ impl FileManager {
             }
         }
 
-        let mode_display = match self.mode_left {
+        let mode_display = match self.left_pane.mode {
             InteractionMode::Normal => Span::styled(
                 "🔵 Mode: Normal",
                 Style::default()

@@ -13,7 +13,7 @@ impl FileManager {
                     if let PopupType::Confirm = self.popup.clone() {
                         match key.code {
                             KeyCode::Char('n') => self.toggle_confirmation_popup(),
-                            KeyCode::Char('y') => match self.mode_left {
+                            KeyCode::Char('y') => match self.left_pane.mode {
                                 InteractionMode::Normal => self.delete_selected(),
                                 InteractionMode::MultiSelect => self.delete_multiple(),
                             },
@@ -57,7 +57,7 @@ impl FileManager {
                         }
                         continue;
                     }
-                    if let InteractionMode::Normal = self.mode_left {
+                    if let InteractionMode::Normal = self.left_pane.mode {
                         match key.code {
                             KeyCode::Char('q') => break,
                             KeyCode::Char('j') | KeyCode::Down => self.navigate_down(),
@@ -66,7 +66,7 @@ impl FileManager {
                             KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => self.navigate_to_child(),
                             KeyCode::Char('d') => self.toggle_confirmation_popup(),
                             KeyCode::Char('r') => {
-                                if !self.left_entries.is_empty() {
+                                if !self.left_pane.entries.is_empty() {
                                     self.popup = PopupType::Rename
                                 }
                             }
@@ -76,19 +76,19 @@ impl FileManager {
                             KeyCode::Char('p') => self.paste_clipboard(),
                             KeyCode::Esc => self.deselect_all(),
                             KeyCode::Char(' ') => {
-                                if let Some(current_selection) = self.selection_left.selected() {
-                                    if let Some(selected_item) = self.left_entries.get_mut(current_selection)
+                                if let Some(current_selection) = self.left_pane.selection.selected() {
+                                    if let Some(selected_item) = self.left_pane.entries.get_mut(current_selection)
                                     {
                                         selected_item.is_selected ^= true;
                                     }
                                 }
                             }
                             KeyCode::Char('v') => {
-                                self.mode_left = InteractionMode::MultiSelect;
-                                if let InteractionMode::MultiSelect = self.mode_left {
-                                    if let Some(current_selection) = self.selection_left.selected() {
+                                self.left_pane.mode = InteractionMode::MultiSelect;
+                                if let InteractionMode::MultiSelect = self.left_pane.mode {
+                                    if let Some(current_selection) = self.left_pane.selection.selected() {
                                         if let Some(selected_item) =
-                                            self.left_entries.get_mut(current_selection)
+                                            self.left_pane.entries.get_mut(current_selection)
                                         {
                                             selected_item.is_selected = true;
                                         }
@@ -98,21 +98,21 @@ impl FileManager {
                             _ => {}
                         }
                     }
-                    if let InteractionMode::MultiSelect = self.mode_left {
+                    if let InteractionMode::MultiSelect = self.left_pane.mode {
                         match key.code {
                             KeyCode::Char('j') | KeyCode::Down => self.navigate_down(),
                             KeyCode::Char('k') | KeyCode::Up => self.navigate_up(),
                             KeyCode::Char('d') => self.toggle_confirmation_popup(),
                             KeyCode::Char(' ') => {
-                                if let Some(current_selection) = self.selection_left.selected() {
-                                    if let Some(selected_item) = self.left_entries.get_mut(current_selection)
+                                if let Some(current_selection) = self.left_pane.selection.selected() {
+                                    if let Some(selected_item) = self.left_pane.entries.get_mut(current_selection)
                                     {
                                         selected_item.is_selected ^= true;
                                     }
                                 }
                             }
                             KeyCode::Char('q') => break,
-                            KeyCode::Esc => self.mode_left = InteractionMode::Normal,
+                            KeyCode::Esc => self.left_pane.mode = InteractionMode::Normal,
                             _ => {}
                         }
                     }
