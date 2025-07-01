@@ -33,6 +33,7 @@ pub fn list_dir(p: &PathBuf) -> std::io::Result<Vec<FsEntry>> {
     Ok(items)
 }
 
+#[allow(unused)]
 pub fn recursively_copy_dir(src: &PathBuf, dst: &PathBuf) -> io::Result<()> {
     fs::create_dir_all(dst)?;
 
@@ -51,6 +52,7 @@ pub fn recursively_copy_dir(src: &PathBuf, dst: &PathBuf) -> io::Result<()> {
     Ok(())
 }
 
+#[allow(unused)]
 pub fn move_file(src: &PathBuf, dst: &PathBuf) -> io::Result<()> {
     let result = recursively_copy_dir(src, dst);
     if result.is_ok() {
@@ -63,6 +65,7 @@ pub fn move_file(src: &PathBuf, dst: &PathBuf) -> io::Result<()> {
     result
 }
 
+#[allow(unused)]
 pub fn read_valid_file(path: &PathBuf) -> io::Result<String> {
     if fs::metadata(path)?.len() == 0 {
         Ok("Empty File".to_string())

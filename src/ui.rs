@@ -1,13 +1,13 @@
 use crate::utils::{
-    bottom_right_area, convert_to_listitems, format_size, mode_to_string, popup_area,
+    bottom_right_area, format_size, mode_to_string, popup_area,
 };
-use crate::{Action, Clipboard, FileContent, FileManager, FilePane, FsEntry, FsEntryType, InteractionMode, PopupType, PreviewContent};
+use crate::{Action, FileManager, FilePane, FsEntryType, InteractionMode, PopupType};
 use ratatui::prelude::*;
 use ratatui::{
     layout::{Constraint, Flex},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType::Rounded, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType::Rounded, Borders, Clear, List, Paragraph, Wrap},
     Frame,
 };
 

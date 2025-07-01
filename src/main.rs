@@ -1,18 +1,12 @@
+#![allow(unused_imports)]
 mod event_handler;
 use std::time::{Duration, Instant};
 mod ui;
 mod utils;
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use std::{fs, path::PathBuf, sync::mpsc, thread};
-use std::cell::RefCell;
-use std::mem::zeroed;
-use std::rc::Rc;
-use std::sync::Arc;
-use ratatui::Frame;
-use ratatui::layout::Alignment;
 use ratatui::prelude::{Color, Line, Modifier, Span, Style};
 use ratatui::text::ToText;
-use ratatui::widgets::BorderType::Rounded;
+use ratatui::widgets::{ListItem, ListState};
+use std::{fs, path::PathBuf};
 use utils::{get_state_data, move_file, recursively_copy_dir};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -181,7 +175,7 @@ impl FilePane {
 
     fn enter_directory(&mut self, new_path: PathBuf) {
         match get_state_data(&new_path) {
-            Ok((entries, parent_path)) => {
+            Ok((entries, _parent_path)) => {
                 self.path = new_path;
                 self.entries = entries;
             }
@@ -191,7 +185,7 @@ impl FilePane {
     
     fn refresh_directory(&mut self) {
         match get_state_data(&self.path) {
-            Ok((entries, parent_path)) => {
+            Ok((entries, _parent_path)) => {
                 self.entries = entries;
             }
             Err(e) => self.show_notification(e.to_string()),
@@ -320,48 +314,14 @@ impl FilePane {
             }
         }
     }
+    
 
 
-    /*
-    fn set_clipboard_entries(&mut self) {
-        if self.left_pane.mode == InteractionMode::Normal
-            && !self.left_pane.entries.iter().any(|entry| entry.is_selected)
-        {
-            if let Some(current_selection) = self.left_pane.selection.selected() {
-                if let Some(selected_item) = self.left_pane.entries.get_mut(current_selection) {
-                    selected_item.is_selected = true;
-                }
-            }
-
-            if let Some(entry) = self.get_selected_index_entry() {
-                self.clipboard.paths = vec![
-                    self.left_pane
-                        .path
-                        .join(&entry.name)
-                        .canonicalize()
-                        .unwrap(),
-                ];
-            }
-        } else {
-            self.clipboard.paths = self.get_selected_paths();
-        }
-    }
-
-    fn copy_selected_entries(&mut self) {
-        self.clipboard.action = Action::Copy;
-        self.set_clipboard_entries();
-    }
-
-    fn move_selected_entries(&mut self) {
-        self.clipboard.action = Action::Move;
-        self.set_clipboard_entries();
-    }
-*/
 } // FilePane
 
 impl FileManager {
     fn new(start_path: &PathBuf) -> Result<Self, std::io::Error> {
-        let (left_entries, parent_path) = get_state_data(start_path).unwrap();
+        let (left_entries, _parent_path) = get_state_data(start_path).unwrap();
         let (right_entries, _) = get_state_data(start_path).unwrap();
 
         let state = Self {
@@ -406,6 +366,29 @@ impl FileManager {
         self.right_entries = PreviewContent::File(FileContent::Binary(content));
     }*/
 
+    fn set_clipboard_entries(&mut self) {
+        if self.selected_pane().mode == InteractionMode::Normal
+            && !self.selected_pane().entries.iter().any(|entry| entry.is_selected)
+        {
+            if let Some(current_selection) = self.selected_pane().selection.selected() {
+                if let Some(selected_item) = self.left_pane.entries.get_mut(current_selection) {
+                    selected_item.is_selected = true;
+                }
+            }
+
+            if let Some(entry) = self.selected_pane().get_selected_index_entry() {
+                self.clipboard.paths = vec![
+                    self.left_pane
+                        .path
+                        .join(&entry.name)
+                        .canonicalize()
+                        .unwrap(),
+                ];
+            }
+        } else {
+            self.clipboard.paths = self.selected_pane().get_selected_paths();
+        }
+    }
 
     fn create_entry(&mut self, input: String) {
         let is_directory = input.ends_with('/');
@@ -504,7 +487,16 @@ impl FileManager {
         
         self.clipboard.action = Action::None
     }
-    
+
+    fn copy_selected_entries(&mut self) {
+        self.clipboard.action = Action::Copy;
+        self.set_clipboard_entries();
+    }
+
+    fn move_selected_entries(&mut self) {
+        self.clipboard.action = Action::Move;
+        self.set_clipboard_entries();
+    }
 }  // FileManager
 
 fn main() -> std::io::Result<()> {

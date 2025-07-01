@@ -1,11 +1,14 @@
 use crate::{FileManager, InteractionMode, PopupType, Selected};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, ModifierKeyCode};
 use ratatui::DefaultTerminal;
 use std::io;
 use std::time::Duration;
 impl FileManager {
+    
     pub fn run(mut self, mut terminal: DefaultTerminal) -> io::Result<()> {
         let poll_interval = Duration::from_millis(200);
+        self.left_pane.selection.select(None);
+
         loop {
             terminal.draw(|f| self.render(f))?;
 
@@ -75,7 +78,7 @@ impl FileManager {
                                 self.left_pane.selection.select_first();
                                 Selected::Left 
                             },
-                            KeyCode::Char('q') => break,
+                            KeyCode::Char('q') | KeyCode::F(10) => break,
                             KeyCode::Char('j') | KeyCode::Down => self.selected_pane_mut().navigate_down(),
                             KeyCode::Char('k') | KeyCode::Up => self.selected_pane_mut().navigate_up(),
                             KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace => {
@@ -84,16 +87,16 @@ impl FileManager {
                             KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
                                 self.selected_pane_mut().navigate_to_child()
                             }
-                            KeyCode::Char('d') => self.selected_pane_mut().toggle_confirmation_popup(),
-                            KeyCode::Char('r') => {
-                                if !self.left_pane.entries.is_empty() {
+                            KeyCode::Char('d') | KeyCode::F(8) => self.selected_pane_mut().toggle_confirmation_popup(),
+                            KeyCode::Char('r')  => {
+                                if !self.selected_pane().entries.is_empty() {
                                     self.selected_pane_mut().popup = PopupType::Rename
                                 }
                             }
-                            KeyCode::Char('a') => self.selected_pane_mut().popup = PopupType::Create,
-                            //TODO KeyCode::Char('y') => self.copy_selected_entries(),
-                            //TODO KeyCode::Char('x') => self.move_selected_entries(),
-                            //TODO KeyCode::Char('p') => self.paste_clipboard(),
+                            KeyCode::Char('a') | KeyCode::F(2) => self.selected_pane_mut().popup = PopupType::Create,
+                            KeyCode::Char('y') | KeyCode::F(5) => self.copy_selected_entries(),
+                            KeyCode::Char('x') | KeyCode::F(6) => self.move_selected_entries(), 
+                            KeyCode::Char('p') => self.paste_clipboard(),
                             KeyCode::Esc => self.selected_pane_mut().deselect_all(),
                             KeyCode::Char(' ') => {
                                 if let Some(current_selection) = self.left_pane.selection.selected()
@@ -119,6 +122,12 @@ impl FileManager {
                                     }
                                 }
                             }
+                            // F9 Menu
+                            // F1 Hilfe
+                            // F2 Function Menu
+                            // F3 View
+                            // F4 Edit
+                            // F9 Menu Bar
                             _ => {}
                         }
                     }
