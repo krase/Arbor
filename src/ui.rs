@@ -1,24 +1,24 @@
-use crate::utils::{
-    bottom_right_area, format_size, mode_to_string, popup_area,
-};
+use crate::utils::{bottom_right_area, format_size, mode_to_string, popup_area};
 use crate::{Action, FileManager, FilePane, FsEntryType, InteractionMode, PopupType};
 use ratatui::prelude::*;
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType::Rounded, Borders, Clear, List, Paragraph, Wrap},
-    Frame,
 };
 
 impl FilePane {
-
     fn render(&mut self, f: &mut Frame, clipboard_action: Action, layout: Rect) {
         let cursor_index = self.selection.selected();
 
         let list_items = Self::list_files(&self.entries, &clipboard_action, cursor_index);
-        
-        let block = Block::bordered().border_type(Rounded).borders(Borders::ALL).title(self.path.to_string_lossy());
+
+        let block = Block::bordered()
+            .border_type(Rounded)
+            .borders(Borders::ALL)
+            .title(self.path.to_string_lossy());
 
         let empty_lists = Paragraph::new("No Files")
             .alignment(Alignment::Center)
@@ -30,121 +30,37 @@ impl FilePane {
             )
             .add_modifier(Modifier::BOLD)
             .block(block.clone());
-        
-        
+
         if entry_lists.is_empty() {
             f.render_widget(&empty_lists, layout);
         } else {
             f.render_stateful_widget(entry_lists, layout, &mut self.selection);
         }
-
     }
 }
 
 impl FileManager {
     pub fn render(&mut self, f: &mut Frame) {
+        let v_layout =
+            Layout::vertical([Constraint::Min(5), Constraint::Length(1)]).split(f.area());
 
-        let v_layout = Layout::vertical([
-            Constraint::Min(5),
-            Constraint::Length(1),
-        ])
-        .split(f.area());
-        
         /*let bars_layout = Layout::horizontal(
             [Constraint::Percentage(50), Constraint::Percentage(50)]
         ).split(v_layout[1]);*/
 
         let h_layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![
-                Constraint::Percentage(50),
-                Constraint::Percentage(50),
-            ])
+            .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(v_layout[0]);
-        
-        self.left_pane.render(f, self.clipboard.action.clone(), h_layout[0]);
-        self.right_pane.render(f, self.clipboard.action.clone(), h_layout[1]);
+
+        self.left_pane
+            .render(f, self.clipboard.action.clone(), h_layout[0]);
+        self.right_pane
+            .render(f, self.clipboard.action.clone(), h_layout[1]);
 
         let selected_pane = self.selected_pane();
-        if let PopupType::Confirm = selected_pane.popup.clone() {
-            let mut confirm_file_list = Paragraph::new("").wrap(Wrap { trim: false });
-
-            match selected_pane.mode {
-                InteractionMode::Normal => {
-                    if let Some(index) = selected_pane.selection.selected() {
-                        if let Some(file) = selected_pane.entries.get(index) {
-                            let name = file.name.clone();
-                            let path = selected_pane.path.join(name).to_string_lossy().to_string();
-
-                            confirm_file_list = Paragraph::new(path)
-                                .alignment(Alignment::Left)
-                                .wrap(Wrap { trim: false });
-                        }
-                    }
-                }
-
-                InteractionMode::MultiSelect => {
-                    let selected_field = selected_pane.get_selected_paths();
-                    let mut text = vec![Line::from("")];
-                    for file in selected_field {
-                        text.push(Line::from(file.to_string_lossy().to_string()));
-                    }
-
-                    confirm_file_list = Paragraph::new(text)
-                        .alignment(Alignment::Left)
-                        .wrap(Wrap { trim: false });
-                }
-            };
-
-            let block = Block::bordered()
-                .border_type(Rounded)
-                .title("Confirm your action")
-                .blue();
-            let area = popup_area(f.area(), 37, 40);
-
-            let inner_area = block.inner(area);
-
-            let popup_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![
-                    Constraint::Percentage(90),
-                    Constraint::Length(1),
-                    Constraint::Percentage(10),
-                ])
-                .split(inner_area);
-
-            let sub_section = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Percentage(100)])
-                .split(popup_layout[0]);
-
-            let separator = Paragraph::new(Span::styled(
-                "─".repeat(popup_layout[1].width as usize),
-                Style::default().fg(Color::LightBlue),
-            ));
-
-            let seperator_layout = Layout::horizontal([Constraint::Percentage(95)])
-                .flex(Flex::Center)
-                .split(popup_layout[1]);
-
-            let options = Paragraph::new("Yes(Y)")
-                .block(Block::default().borders(Borders::NONE))
-                .alignment(ratatui::layout::Alignment::Center);
-            let options1 = Paragraph::new("No(N)")
-                .block(Block::default().borders(Borders::NONE))
-                .alignment(ratatui::layout::Alignment::Center);
-
-            let section2 = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(popup_layout[2]);
-
-            f.render_widget(Clear, area);
-            f.render_widget(block, area);
-            f.render_widget(confirm_file_list, sub_section[0]);
-            f.render_widget(separator, seperator_layout[0]);
-            f.render_widget(options, section2[0]);
-            f.render_widget(options1, section2[1]);
+        if let PopupType::Confirm(m) = &selected_pane.popup {
+            Self::render_confirmation(f, selected_pane);
         }
 
         if let PopupType::Rename = &selected_pane.popup {
@@ -254,7 +170,88 @@ impl FileManager {
             .alignment(Alignment::Right);
 
         f.render_widget(per_paragraph, bottom_layout[1]);
-        
     }
 
+    fn render_confirmation(f: &mut Frame, selected_pane: &FilePane) {
+        if let PopupType::Confirm(msg) = &selected_pane.popup {
+            let mut confirm_file_list = Paragraph::new("").wrap(Wrap { trim: false });
+
+            match selected_pane.mode {
+                InteractionMode::Normal => {
+                    if let Some(index) = selected_pane.selection.selected() {
+                        if let Some(file) = selected_pane.entries.get(index) {
+                            let name = file.name.clone();
+                            let path = selected_pane.path.join(name).to_string_lossy().to_string();
+
+                            confirm_file_list = Paragraph::new(path)
+                                .alignment(Alignment::Left)
+                                .wrap(Wrap { trim: false });
+                        }
+                    }
+                }
+
+                InteractionMode::MultiSelect => {
+                    let selected_field = selected_pane.get_selected_paths();
+                    let mut text = vec![Line::from("")];
+                    for file in selected_field {
+                        text.push(Line::from(file.to_string_lossy().to_string()));
+                    }
+
+                    confirm_file_list = Paragraph::new(text)
+                        .alignment(Alignment::Left)
+                        .wrap(Wrap { trim: false });
+                }
+            };
+
+            let block = Block::bordered()
+                .border_type(Rounded)
+                .title(format!("Confirm your action: {}", msg))
+                .blue();
+            let area = popup_area(f.area(), 37, 40);
+
+            let inner_area = block.inner(area);
+
+            let popup_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Percentage(90),
+                    Constraint::Length(1),
+                    Constraint::Percentage(10),
+                ])
+                .split(inner_area);
+
+            let sub_section = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Percentage(100)])
+                .split(popup_layout[0]);
+
+            let separator = Paragraph::new(Span::styled(
+                "─".repeat(popup_layout[1].width as usize),
+                Style::default().fg(Color::LightBlue),
+            ));
+
+            let seperator_layout = Layout::horizontal([Constraint::Percentage(95)])
+                .flex(Flex::Center)
+                .split(popup_layout[1]);
+
+            let options = Paragraph::new("Yes(Y)")
+                .block(Block::default().borders(Borders::NONE))
+                .alignment(ratatui::layout::Alignment::Center);
+            let options1 = Paragraph::new("No(N)")
+                .block(Block::default().borders(Borders::NONE))
+                .alignment(ratatui::layout::Alignment::Center);
+
+            let section2 = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(popup_layout[2]);
+
+            f.render_widget(Clear, area);
+            f.render_widget(block, area);
+            f.render_widget(confirm_file_list, sub_section[0]);
+            f.render_widget(separator, seperator_layout[0]);
+            f.render_widget(options, section2[0]);
+            f.render_widget(options1, section2[1]);
+        }
+    }
 }

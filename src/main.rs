@@ -6,6 +6,7 @@ mod utils;
 use ratatui::prelude::{Color, Line, Modifier, Span, Style};
 use ratatui::text::ToText;
 use ratatui::widgets::{ListItem, ListState};
+use std::cmp::Ordering;
 use std::{fs, path::PathBuf};
 use utils::{get_state_data, move_file, recursively_copy_dir};
 
@@ -38,7 +39,7 @@ pub enum PreviewContent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PopupType {
-    Confirm,
+    Confirm(String),
     Rename,
     Create,
     None,
@@ -75,6 +76,7 @@ pub struct FilePane {
     path: PathBuf,
     entries: Vec<FsEntry>,
     selection: ListState,
+    old_curser_pos: Option<usize>,
     mode: InteractionMode,
     notify: Option<Notification>,
     popup: PopupType,
@@ -93,11 +95,10 @@ pub struct FileManager {
     selected_pane: Selected,
 
     clipboard: Clipboard,
-    
+
     input_buffer: String,
     notify: Option<Notification>,
-}   
- 
+}
 
 impl FilePane {
     fn new(path: PathBuf, entries: Vec<FsEntry>) -> Self {
@@ -105,14 +106,28 @@ impl FilePane {
             path,
             entries,
             selection: ListState::default().with_selected(Some(0)),
+            old_curser_pos: None,
             mode: InteractionMode::Normal,
             notify: None,
             popup: PopupType::None,
         }
     }
 
+    fn list_files<'a>(
+        current_entries: &'a Vec<FsEntry>,
+        clipboard_action: &Action,
+        cursor_index: Option<usize>,
+    ) -> Vec<ListItem<'a>> {
+        let mut current_entries = current_entries.clone();
+        
+        // Sort by type and by name. Directories come first
+        current_entries.sort_by(|a, b| match (a.is_dir(), b.is_dir()) {
+            (true, true) => a.name.cmp(&b.name),
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (false, false) => a.name.cmp(&b.name),
+        });
 
-    fn list_files<'a>(current_entries: &'a Vec<FsEntry>, clipboard_action: &Action, cursor_index: Option<usize>) -> Vec<ListItem<'a>> {
         let list_current_items: Vec<ListItem> = current_entries
             .iter()
             .enumerate()
@@ -156,7 +171,6 @@ impl FilePane {
         list_current_items
     }
 
-
     fn show_notification(&mut self, message: String) {
         self.notify = Some(Notification {
             message,
@@ -182,7 +196,7 @@ impl FilePane {
             Err(e) => self.show_notification(e.to_string()),
         }
     }
-    
+
     fn refresh_directory(&mut self) {
         match get_state_data(&self.path) {
             Ok((entries, _parent_path)) => {
@@ -246,17 +260,18 @@ impl FilePane {
         }
 
         self.refresh_directory();
-        self.toggle_confirmation_popup();
+        self.open_confirmation_popup("Delete multiple");
         self.mode = InteractionMode::Normal;
     }
 
-    fn toggle_confirmation_popup(&mut self) {
+    fn open_confirmation_popup(&mut self, title: &str) {
         if !self.entries.is_empty() {
-            self.popup = match self.popup {
-                PopupType::Confirm => PopupType::None,
-                _ => PopupType::Confirm,
-            };
+            self.popup = PopupType::Confirm(title.to_string());
         }
+    }
+
+    fn close_confirmation_popup(&mut self) {
+        self.popup = PopupType::None;
     }
 
     fn get_selected_index_entry(&self) -> Option<&FsEntry> {
@@ -282,7 +297,6 @@ impl FilePane {
         }
     }
 
-
     fn rename_selected(&mut self, input: &str) {
         if let Some(entry) = self.get_selected_index_entry() {
             let old_path = self.path.join(&entry.name);
@@ -299,7 +313,7 @@ impl FilePane {
 
     fn navigate_to_parent(&mut self) {
         if let Some(parent_path) = self.path.parent() {
-            self.enter_directory (parent_path.to_path_buf());
+            self.enter_directory(parent_path.to_path_buf());
             self.selection = ListState::default().with_selected(Some(0));
         }
     }
@@ -314,9 +328,6 @@ impl FilePane {
             }
         }
     }
-    
-
-
 } // FilePane
 
 impl FileManager {
@@ -343,7 +354,7 @@ impl FileManager {
     fn selected_pane(&self) -> &FilePane {
         if self.selected_pane == Selected::Left {
             &self.left_pane
-        } else  {
+        } else {
             &self.right_pane
         }
     }
@@ -351,11 +362,10 @@ impl FileManager {
     fn selected_pane_mut(&mut self) -> &mut FilePane {
         if self.selected_pane == Selected::Left {
             &mut self.left_pane
-        } else  {
+        } else {
             &mut self.right_pane
         }
     }
-
 
     /*fn refresh_preview_with_text_file(&mut self, content: String) {
         self.right_entries = PreviewContent::File(FileContent::Text(content));
@@ -368,7 +378,11 @@ impl FileManager {
 
     fn set_clipboard_entries(&mut self) {
         if self.selected_pane().mode == InteractionMode::Normal
-            && !self.selected_pane().entries.iter().any(|entry| entry.is_selected)
+            && !self
+                .selected_pane()
+                .entries
+                .iter()
+                .any(|entry| entry.is_selected)
         {
             if let Some(current_selection) = self.selected_pane().selection.selected() {
                 if let Some(selected_item) = self.left_pane.entries.get_mut(current_selection) {
@@ -446,7 +460,6 @@ impl FileManager {
         });
     }
 
-
     fn paste_clipboard(&mut self) {
         let clipboard = self.clipboard.clone();
         for src in clipboard.paths {
@@ -484,7 +497,7 @@ impl FileManager {
             }
         }
         self.selected_pane_mut().refresh_directory();
-        
+
         self.clipboard.action = Action::None
     }
 
@@ -497,7 +510,7 @@ impl FileManager {
         self.clipboard.action = Action::Move;
         self.set_clipboard_entries();
     }
-}  // FileManager
+} // FileManager
 
 fn main() -> std::io::Result<()> {
     let terminal = ratatui::init();
@@ -506,7 +519,7 @@ fn main() -> std::io::Result<()> {
     let absolute_path = start_dir.canonicalize().expect("Failed to resolve path");
 
     let exit_result = FileManager::new(&absolute_path).unwrap().run(terminal);
-    
+
     ratatui::restore();
     exit_result
 }

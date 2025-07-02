@@ -9,6 +9,15 @@ use ratatui::{
 use std::{fs, io};
 use std::{os::unix::fs::MetadataExt, path::PathBuf};
 
+impl FsEntry {
+    pub fn is_file(&self) -> bool {
+        self.entry_type == FsEntryType::File
+    }
+    pub fn is_dir(&self) -> bool {
+        self.entry_type == FsEntryType::Directory
+    }
+}
+
 pub fn list_dir(p: &PathBuf) -> std::io::Result<Vec<FsEntry>> {
     let mut items = Vec::new();
     for entry in fs::read_dir(p)? {
