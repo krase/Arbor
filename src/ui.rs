@@ -18,7 +18,7 @@ impl FilePane {
 
         let list_items = Self::list_files(&self.entries, &clipboard_action, cursor_index);
         
-        let block = Block::bordered().border_type(Rounded).borders(Borders::ALL);
+        let block = Block::bordered().border_type(Rounded).borders(Borders::ALL).title(self.path.to_string_lossy());
 
         let empty_lists = Paragraph::new("No Files")
             .alignment(Alignment::Center)
@@ -49,7 +49,10 @@ impl FileManager {
             Constraint::Length(1),
         ])
         .split(f.area());
-
+        
+        /*let bars_layout = Layout::horizontal(
+            [Constraint::Percentage(50), Constraint::Percentage(50)]
+        ).split(v_layout[1]);*/
 
         let h_layout = Layout::default()
             .direction(Direction::Horizontal)
@@ -58,12 +61,7 @@ impl FileManager {
                 Constraint::Percentage(50),
             ])
             .split(v_layout[0]);
-
-        let directory_para_left = Paragraph::new(self.left_pane.path.to_string_lossy());
-        f.render_widget(directory_para_left, v_layout[0]);
-        let directory_para_right = Paragraph::new(self.right_pane.path.to_string_lossy());
-        f.render_widget(directory_para_right, v_layout[0]);
-
+        
         self.left_pane.render(f, self.clipboard.action.clone(), h_layout[0]);
         self.right_pane.render(f, self.clipboard.action.clone(), h_layout[1]);
 
@@ -256,6 +254,7 @@ impl FileManager {
             .alignment(Alignment::Right);
 
         f.render_widget(per_paragraph, bottom_layout[1]);
+        
     }
 
 }
