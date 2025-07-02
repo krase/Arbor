@@ -59,7 +59,7 @@ impl FileManager {
             .render(f, self.clipboard.action.clone(), h_layout[1]);
 
         let selected_pane = self.selected_pane();
-        if let PopupType::Confirm(m) = &selected_pane.popup {
+        if let PopupType::Confirm(_m) = &selected_pane.popup {
             Self::render_confirmation(f, selected_pane);
         }
 
@@ -130,7 +130,7 @@ impl FileManager {
             }
         }
 
-        let mode_display = match self.left_pane.mode {
+        let mode_display = match self.selected_pane().mode {
             InteractionMode::Normal => Span::styled(
                 "🔵 Mode: Normal",
                 Style::default()

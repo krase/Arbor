@@ -110,10 +110,10 @@ pub fn mode_to_string(mode: u32) -> String {
     result
 }
 
-pub fn get_state_data(start: &PathBuf) -> std::io::Result<(Vec<FsEntry>, Option<PathBuf>)> {
+pub fn get_state_data(start: &PathBuf) -> std::io::Result<Vec<FsEntry>> {
     let entries = list_dir(start)?;
-    let parent_path = start.parent().map(|p| p.to_path_buf());
-    Ok((entries, parent_path))
+    //let parent_path = start.parent().map(|p| p.to_path_buf());
+    Ok(entries)
 }
 
 pub fn convert_to_listitems(f: &[FsEntry]) -> Vec<ListItem> {

@@ -46,6 +46,7 @@ impl FileManager {
                             } // Remove last character
                             KeyCode::Enter => {
                                 let tmp = self.input_buffer.clone();
+                                self.input_buffer.clear();
                                 self.selected_pane_mut().rename_selected(tmp.as_str());
                             }
                             KeyCode::Esc => self.selected_pane_mut().popup = PopupType::None,
@@ -74,6 +75,7 @@ impl FileManager {
                     if let InteractionMode::Normal = mode {
                         match key.code {
                             KeyCode::Tab => {
+                                // Switch between left and right pane
                                 self.selected_pane = if self.selected_pane == Selected::Left {
                                     self.left_pane.old_curser_pos =
                                         self.left_pane.selection.selected();
@@ -114,7 +116,8 @@ impl FileManager {
                                 self.selected_pane_mut().navigate_to_child()
                             }
                             KeyCode::Char('d') | KeyCode::F(8) => {
-                                self.selected_pane_mut().open_confirmation_popup("Delete item");
+                                self.selected_pane_mut()
+                                    .open_confirmation_popup("Delete item");
                             }
                             KeyCode::Char('r') => {
                                 if !self.selected_pane().entries.is_empty() {
@@ -124,15 +127,17 @@ impl FileManager {
                             KeyCode::Char('a') | KeyCode::F(2) => {
                                 self.selected_pane_mut().popup = PopupType::Create
                             }
+                            // TODO Copy/Move from active pane to the inactive
                             KeyCode::Char('y') | KeyCode::F(5) => self.copy_selected_entries(),
                             KeyCode::Char('x') | KeyCode::F(6) => self.move_selected_entries(),
                             KeyCode::Char('p') => self.paste_clipboard(),
                             KeyCode::Esc => self.selected_pane_mut().deselect_all(),
                             KeyCode::Char(' ') => {
-                                if let Some(current_selection) = self.left_pane.selection.selected()
+                                if let Some(current_selection) =
+                                    self.selected_pane().selection.selected()
                                 {
                                     if let Some(selected_item) =
-                                        self.left_pane.entries.get_mut(current_selection)
+                                        self.selected_pane_mut().entries.get_mut(current_selection)
                                     {
                                         selected_item.is_selected ^= true;
                                     }
@@ -142,10 +147,12 @@ impl FileManager {
                                 self.selected_pane_mut().mode = InteractionMode::MultiSelect;
                                 if let InteractionMode::MultiSelect = mode {
                                     if let Some(current_selection) =
-                                        self.left_pane.selection.selected()
+                                        self.selected_pane().selection.selected()
                                     {
-                                        if let Some(selected_item) =
-                                            self.left_pane.entries.get_mut(current_selection)
+                                        if let Some(selected_item) = self
+                                            .selected_pane_mut()
+                                            .entries
+                                            .get_mut(current_selection)
                                         {
                                             selected_item.is_selected = true;
                                         }
@@ -161,7 +168,7 @@ impl FileManager {
                             _ => {}
                         }
                     }
-                    if let InteractionMode::MultiSelect = self.left_pane.mode {
+                    if let InteractionMode::MultiSelect = self.selected_pane().mode {
                         match key.code {
                             KeyCode::Char('j') | KeyCode::Down => {
                                 self.selected_pane_mut().navigate_down()
@@ -170,20 +177,22 @@ impl FileManager {
                                 self.selected_pane_mut().navigate_up()
                             }
                             KeyCode::Char('d') => {
-                                self.selected_pane_mut().open_confirmation_popup("Delete multiple");
+                                self.selected_pane_mut()
+                                    .open_confirmation_popup("Delete multiple");
                             }
                             KeyCode::Char(' ') => {
-                                if let Some(current_selection) = self.left_pane.selection.selected()
+                                if let Some(current_selection) =
+                                    self.selected_pane().selection.selected()
                                 {
                                     if let Some(selected_item) =
-                                        self.left_pane.entries.get_mut(current_selection)
+                                        self.selected_pane_mut().entries.get_mut(current_selection)
                                     {
                                         selected_item.is_selected ^= true;
                                     }
                                 }
                             }
                             KeyCode::Char('q') => break,
-                            KeyCode::Esc => self.left_pane.mode = InteractionMode::Normal,
+                            KeyCode::Esc => self.selected_pane_mut().mode = InteractionMode::Normal,
                             _ => {}
                         }
                     }

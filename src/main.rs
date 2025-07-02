@@ -119,7 +119,7 @@ impl FilePane {
         cursor_index: Option<usize>,
     ) -> Vec<ListItem<'a>> {
         let mut current_entries = current_entries.clone();
-        
+
         // Sort by type and by name. Directories come first
         current_entries.sort_by(|a, b| match (a.is_dir(), b.is_dir()) {
             (true, true) => a.name.cmp(&b.name),
@@ -189,7 +189,7 @@ impl FilePane {
 
     fn enter_directory(&mut self, new_path: PathBuf) {
         match get_state_data(&new_path) {
-            Ok((entries, _parent_path)) => {
+            Ok(entries) => {
                 self.path = new_path;
                 self.entries = entries;
             }
@@ -199,7 +199,7 @@ impl FilePane {
 
     fn refresh_directory(&mut self) {
         match get_state_data(&self.path) {
-            Ok((entries, _parent_path)) => {
+            Ok(entries) => {
                 self.entries = entries;
             }
             Err(e) => self.show_notification(e.to_string()),
@@ -304,8 +304,6 @@ impl FilePane {
 
             if fs::rename(&old_path, &new_path).is_ok() {
                 self.refresh_directory();
-                // TODO Where to hold the input buffer of the popup?
-                // self.input_buffer.clear();
                 self.popup = PopupType::None;
             }
         }
@@ -332,8 +330,8 @@ impl FilePane {
 
 impl FileManager {
     fn new(start_path: &PathBuf) -> Result<Self, std::io::Error> {
-        let (left_entries, _parent_path) = get_state_data(start_path).unwrap();
-        let (right_entries, _) = get_state_data(start_path).unwrap();
+        let left_entries = get_state_data(start_path).unwrap();
+        let right_entries = get_state_data(start_path).unwrap();
 
         let state = Self {
             left_pane: FilePane::new(start_path.clone(), left_entries),
@@ -385,14 +383,16 @@ impl FileManager {
                 .any(|entry| entry.is_selected)
         {
             if let Some(current_selection) = self.selected_pane().selection.selected() {
-                if let Some(selected_item) = self.left_pane.entries.get_mut(current_selection) {
+                if let Some(selected_item) =
+                    self.selected_pane_mut().entries.get_mut(current_selection)
+                {
                     selected_item.is_selected = true;
                 }
             }
 
             if let Some(entry) = self.selected_pane().get_selected_index_entry() {
                 self.clipboard.paths = vec![
-                    self.left_pane
+                    self.selected_pane()
                         .path
                         .join(&entry.name)
                         .canonicalize()
@@ -410,7 +410,7 @@ impl FileManager {
         let mut segments: Vec<&str> = trimmed_input.split('/').collect();
 
         if let Some(name) = segments.pop() {
-            let mut path = self.left_pane.path.clone();
+            let mut path = self.selected_pane().path.clone();
             for segment in segments {
                 path.push(segment);
             }
@@ -428,6 +428,7 @@ impl FileManager {
                 self.create_file(path);
             }
         }
+        self.selected_pane_mut().popup = PopupType::None;
     }
 
     fn create_directory(&mut self, path: PathBuf) {
@@ -448,8 +449,6 @@ impl FileManager {
         self.left_pane.refresh_directory();
         self.right_pane.refresh_directory();
         self.input_buffer.clear();
-        //TODO how to communicate popup stuff?
-        //self.popup = PopupType::None;
     }
 
     fn show_notification<S: AsRef<str>>(&mut self, message: S) {
@@ -515,7 +514,12 @@ impl FileManager {
 fn main() -> std::io::Result<()> {
     let terminal = ratatui::init();
 
-    let start_dir = PathBuf::from("/home/krase");
+    let home_dir = std::env::var("HOME").unwrap_or(".".to_string());
+
+    let mut start_dir = PathBuf::from("~");
+    if start_dir.cmp(&PathBuf::from("~")).is_eq() {
+        start_dir = PathBuf::from(&home_dir);
+    }
     let absolute_path = start_dir.canonicalize().expect("Failed to resolve path");
 
     let exit_result = FileManager::new(&absolute_path).unwrap().run(terminal);
