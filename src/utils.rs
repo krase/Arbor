@@ -116,26 +116,6 @@ pub fn get_state_data(start: &PathBuf) -> std::io::Result<Vec<FsEntry>> {
     Ok(entries)
 }
 
-pub fn convert_to_listitems(f: &[FsEntry]) -> Vec<ListItem> {
-    let list_items: Vec<ListItem> = f
-        .iter()
-        .map(|item| {
-            let display = match item.entry_type {
-                FsEntryType::Directory => format!("📁 {}", item.name),
-                FsEntryType::File => format!("📄 {}", item.name),
-            };
-            let mut style = Style::default();
-            if item.is_selected {
-                style = style.bg(Color::DarkGray);
-            } else {
-                style = Style::default();
-            }
-            ListItem::new(Span::styled(display, style))
-        })
-        .collect();
-    list_items
-}
-
 pub fn format_size(size: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;

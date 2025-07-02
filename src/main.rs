@@ -3,6 +3,7 @@ mod event_handler;
 use std::time::{Duration, Instant};
 mod ui;
 mod utils;
+
 use ratatui::prelude::{Color, Line, Modifier, Span, Style};
 use ratatui::text::ToText;
 use ratatui::widgets::{ListItem, ListState};
