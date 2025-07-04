@@ -8,6 +8,7 @@ use ratatui::{
 
 use std::{fs, io};
 use std::{os::unix::fs::MetadataExt, path::PathBuf};
+use std::cmp::Ordering;
 
 impl FsEntry {
     pub fn is_file(&self) -> bool {
@@ -39,6 +40,14 @@ pub fn list_dir(p: &PathBuf) -> std::io::Result<Vec<FsEntry>> {
         };
         items.push(item);
     }
+    // Sort by type and by name. Directories come first
+    items.sort_by(|a, b| match (a.is_dir(), b.is_dir()) {
+        (true, true) => a.name.cmp(&b.name),
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        (false, false) => a.name.cmp(&b.name),
+    });
+
     Ok(items)
 }
 

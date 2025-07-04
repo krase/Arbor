@@ -1,5 +1,5 @@
 use crate::utils::{bottom_right_area, format_size, mode_to_string, popup_area};
-use crate::{Action, FileManager, FilePane, FsEntryType, InteractionMode, PopupType};
+use crate::{Action, FileManager, FilePane, FsEntryType, PopupType};
 use ratatui::prelude::*;
 use ratatui::{
     Frame,
@@ -10,10 +10,10 @@ use ratatui::{
 };
 
 impl FilePane {
-    fn render(&mut self, f: &mut Frame, clipboard_action: Action, layout: Rect) {
+    fn render(&mut self, f: &mut Frame, layout: Rect) {
         let cursor_index = self.selection.selected();
 
-        let list_items = Self::list_files(&self.entries, &clipboard_action, cursor_index);
+        let list_items = Self::list_files(&self.entries, cursor_index);
 
         let block = Block::bordered()
             .border_type(Rounded)
@@ -53,17 +53,15 @@ impl FileManager {
             .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(v_layout[0]);
 
-        self.left_pane
-            .render(f, self.clipboard.action.clone(), h_layout[0]);
-        self.right_pane
-            .render(f, self.clipboard.action.clone(), h_layout[1]);
+        self.left_pane.render(f, h_layout[0]);
+        self.right_pane.render(f, h_layout[1]);
 
         let selected_pane = self.selected_pane();
-        if let PopupType::Confirm(_m) = &selected_pane.popup {
-            Self::render_confirmation(f, selected_pane);
+        if PopupType::None != self.popup {
+            self.render_confirmation(f);
         }
 
-        if let PopupType::Rename = &selected_pane.popup {
+        if let PopupType::Rename(_) = &self.popup {
             let input = &self.input_buffer;
             let input_paragraph = Paragraph::new(input.clone()).block(
                 Block::bordered()
@@ -78,7 +76,7 @@ impl FileManager {
             f.render_widget(input_paragraph, area);
         }
 
-        if let PopupType::Create = &selected_pane.popup {
+        if let PopupType::Create(_) = &self.popup {
             let input = &self.input_buffer;
             let input_paragraph = Paragraph::new(input.clone()).block(
                 Block::bordered()
@@ -130,7 +128,8 @@ impl FileManager {
             }
         }
 
-        let mode_display = match self.selected_pane().mode {
+        /*
+        let mode_display = match self.mode {
             InteractionMode::Normal => Span::styled(
                 "🔵 Mode: Normal",
                 Style::default()
@@ -143,10 +142,10 @@ impl FileManager {
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-        };
+        };*/
 
         // Combine mode + size
-        let combined_info = Line::from(vec![mode_display, size_display]);
+        let combined_info = Line::from(vec![/*mode_display,*/ size_display]);
 
         let mode_paragraph = Paragraph::new(combined_info)
             .block(Block::default().borders(Borders::NONE))
@@ -172,36 +171,18 @@ impl FileManager {
         f.render_widget(per_paragraph, bottom_layout[1]);
     }
 
-    fn render_confirmation(f: &mut Frame, selected_pane: &FilePane) {
-        if let PopupType::Confirm(msg) = &selected_pane.popup {
-            let mut confirm_file_list = Paragraph::new("").wrap(Wrap { trim: false });
+    fn render_confirmation(&self, f: &mut Frame) {
+        if let PopupType::Delete(msg) | PopupType::Copy(msg) | PopupType::Move(msg) = &self.popup {
+            
+            let selected_field = self.selected_pane().get_selected_paths();
+            let mut text = vec![Line::from("")];
+            for file in selected_field {
+                text.push(Line::from(file.to_string_lossy().to_string()));
+            }
 
-            match selected_pane.mode {
-                InteractionMode::Normal => {
-                    if let Some(index) = selected_pane.selection.selected() {
-                        if let Some(file) = selected_pane.entries.get(index) {
-                            let name = file.name.clone();
-                            let path = selected_pane.path.join(name).to_string_lossy().to_string();
-
-                            confirm_file_list = Paragraph::new(path)
-                                .alignment(Alignment::Left)
-                                .wrap(Wrap { trim: false });
-                        }
-                    }
-                }
-
-                InteractionMode::MultiSelect => {
-                    let selected_field = selected_pane.get_selected_paths();
-                    let mut text = vec![Line::from("")];
-                    for file in selected_field {
-                        text.push(Line::from(file.to_string_lossy().to_string()));
-                    }
-
-                    confirm_file_list = Paragraph::new(text)
-                        .alignment(Alignment::Left)
-                        .wrap(Wrap { trim: false });
-                }
-            };
+            let confirm_file_list = Paragraph::new(text)
+                .alignment(Alignment::Left)
+                .wrap(Wrap { trim: false });
 
             let block = Block::bordered()
                 .border_type(Rounded)

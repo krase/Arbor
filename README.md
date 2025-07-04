@@ -84,3 +84,13 @@ cargo build --release
 ```
 cargo run
 ```
+
+# TODO
+* Improve copy and move actionn and its dialogs, see event_handlers.rs + 73
+* Search on type
+* Shell mode with ctrl-o
+* F5/F6 should copy/move to the other pane
+* F2 for zip/tar etc.
+* F3 for view
+* F4 for Editor
+* 

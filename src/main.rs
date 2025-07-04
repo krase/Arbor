@@ -40,16 +40,12 @@ pub enum PreviewContent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PopupType {
-    Confirm(String),
-    Rename,
-    Create,
+    Delete(String),
+    Rename(String),
+    Create(String),
+    Copy(String),
+    Move(String),
     None,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum InteractionMode {
-    Normal,
-    MultiSelect,
 }
 
 #[derive(Debug, Clone)]
@@ -67,20 +63,12 @@ pub enum Action {
 }
 
 #[derive(Debug, Clone)]
-pub struct Clipboard {
-    paths: Vec<PathBuf>,
-    action: Action,
-}
-
-#[derive(Debug, Clone)]
 pub struct FilePane {
     path: PathBuf,
     entries: Vec<FsEntry>,
-    selection: ListState,
+    selection: ListState, // Cursor
     old_curser_pos: Option<usize>,
-    mode: InteractionMode,
     notify: Option<Notification>,
-    popup: PopupType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,10 +83,9 @@ pub struct FileManager {
     right_pane: FilePane,
     selected_pane: Selected,
 
-    clipboard: Clipboard,
-
     input_buffer: String,
     notify: Option<Notification>,
+    popup: PopupType,
 }
 
 impl FilePane {
@@ -108,37 +95,17 @@ impl FilePane {
             entries,
             selection: ListState::default().with_selected(Some(0)),
             old_curser_pos: None,
-            mode: InteractionMode::Normal,
             notify: None,
-            popup: PopupType::None,
         }
     }
 
-    fn list_files<'a>(
-        current_entries: &'a Vec<FsEntry>,
-        clipboard_action: &Action,
-        cursor_index: Option<usize>,
-    ) -> Vec<ListItem<'a>> {
-        let mut current_entries = current_entries.clone();
-
-        // Sort by type and by name. Directories come first
-        current_entries.sort_by(|a, b| match (a.is_dir(), b.is_dir()) {
-            (true, true) => a.name.cmp(&b.name),
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            (false, false) => a.name.cmp(&b.name),
-        });
-
+    fn list_files(current_entries: &Vec<FsEntry>, cursor_index: Option<usize>) -> Vec<ListItem> {
         let list_current_items: Vec<ListItem> = current_entries
             .iter()
             .enumerate()
             .map(|(index, entry)| {
                 let (bar, bar_style) = if entry.is_selected {
-                    match clipboard_action {
-                        Action::Move => ("▌", Style::default().fg(Color::Red)),
-                        Action::Copy => ("▌", Style::default().fg(Color::Green)),
-                        Action::None => ("▌", Style::default().fg(Color::Yellow)),
-                    }
+                    ("▌", Style::default().fg(Color::Yellow))
                 } else {
                     (" ", Style::default())
                 };
@@ -209,105 +176,54 @@ impl FilePane {
 
     fn navigate_down(&mut self) {
         self.selection.select_next();
-        if self.selection.selected().unwrap_or(0) >= self.entries.len() {
-            self.selection.select(Some(0));
-        }
-        self.select_current();
     }
 
     fn navigate_up(&mut self) {
-        let len = self.entries.len();
         if self.selection.selected().unwrap_or(0) == 0 {
-            self.selection.select(Some(len));
+            self.selection.select(Some(0));
         }
         self.selection.select_previous();
-        self.select_current();
+    }
+
+    fn has_selected(&self) -> bool {
+        self.entries.iter().any(|e| e.is_selected == true)
     }
 
     fn get_selected_paths(&self) -> Vec<PathBuf> {
-        self.entries
-            .iter()
-            .filter(|entry| entry.is_selected)
-            .filter_map(|entry| self.path.join(&entry.name).canonicalize().ok())
-            .collect()
-    }
-
-    fn select_current(&mut self) {
-        if let InteractionMode::MultiSelect = self.mode {
-            if let Some(index) = self.selection.selected() {
-                if let Some(entry) = self.entries.get_mut(index) {
-                    entry.is_selected = true;
-                }
-            }
-        }
-    }
-
-    fn deselect_all(&mut self) {
-        if let InteractionMode::Normal = self.mode {
-            for entry in &mut self.entries {
-                entry.is_selected = false;
-            }
-            self.refresh_directory();
-        }
-    }
-
-    fn delete_multiple(&mut self) {
-        for path in self.get_selected_paths() {
-            let _ = if path.is_file() {
-                fs::remove_file(path)
+        if !self.has_selected() {
+            if let Some(entry) = self.get_selected_index_entry() {
+                vec![self.path.join(&entry.name)]
             } else {
-                fs::remove_dir_all(path)
-            };
+                vec![]
+            }
+        } else {
+            self.entries
+                .iter()
+                .filter(|entry| entry.is_selected)
+                .filter_map(|entry| self.path.join(&entry.name).canonicalize().ok())
+                .collect()
         }
-
+    }
+/*
+    fn select_current(&mut self) {
+        if let Some(index) = self.selection.selected() {
+            if let Some(entry) = self.entries.get_mut(index) {
+                entry.is_selected = true;
+            }
+        }
+    }
+*/
+    fn deselect_all(&mut self) {
+        for entry in &mut self.entries {
+            entry.is_selected = false;
+        }
         self.refresh_directory();
-        self.open_confirmation_popup("Delete multiple");
-        self.mode = InteractionMode::Normal;
-    }
-
-    fn open_confirmation_popup(&mut self, title: &str) {
-        if !self.entries.is_empty() {
-            self.popup = PopupType::Confirm(title.to_string());
-        }
-    }
-
-    fn close_confirmation_popup(&mut self) {
-        self.popup = PopupType::None;
     }
 
     fn get_selected_index_entry(&self) -> Option<&FsEntry> {
         self.selection
             .selected()
             .and_then(|index| self.entries.get(index))
-    }
-
-    fn delete_selected(&mut self) {
-        if let Some(entry) = self.get_selected_index_entry() {
-            let path = self.path.join(&entry.name);
-            let result = match entry.entry_type {
-                FsEntryType::File => fs::remove_file(&path),
-                FsEntryType::Directory => fs::remove_dir_all(&path),
-            };
-
-            if result.is_ok() {
-                self.popup = PopupType::None;
-                self.refresh_directory();
-            } else if let Err(err) = result {
-                self.show_notification(format!("Failed to delete {:?}: {}", path, err));
-            }
-        }
-    }
-
-    fn rename_selected(&mut self, input: &str) {
-        if let Some(entry) = self.get_selected_index_entry() {
-            let old_path = self.path.join(&entry.name);
-            let new_path = self.path.join(input.trim_end_matches('/'));
-
-            if fs::rename(&old_path, &new_path).is_ok() {
-                self.refresh_directory();
-                self.popup = PopupType::None;
-            }
-        }
     }
 
     fn navigate_to_parent(&mut self) {
@@ -338,13 +254,10 @@ impl FileManager {
             left_pane: FilePane::new(start_path.clone(), left_entries),
             right_pane: FilePane::new(start_path.clone(), right_entries),
 
-            clipboard: Clipboard {
-                paths: vec![],
-                action: Action::None,
-            },
             input_buffer: String::new(),
             selected_pane: Selected::Right,
             notify: None,
+            popup: PopupType::None,
         };
 
         Ok(state)
@@ -358,6 +271,14 @@ impl FileManager {
         }
     }
 
+    fn other_pane(&self) -> &FilePane {
+        if self.selected_pane == Selected::Left {
+            &self.right_pane
+        } else {
+            &self.left_pane
+        }
+    }
+
     fn selected_pane_mut(&mut self) -> &mut FilePane {
         if self.selected_pane == Selected::Left {
             &mut self.left_pane
@@ -366,42 +287,41 @@ impl FileManager {
         }
     }
 
-    /*fn refresh_preview_with_text_file(&mut self, content: String) {
-        self.right_entries = PreviewContent::File(FileContent::Text(content));
-        self.update_parent_selection();
+    fn other_pane_mut(&mut self) -> &mut FilePane {
+        if self.selected_pane == Selected::Left {
+            &mut self.right_pane
+        } else {
+            &mut self.left_pane
+        }
     }
 
-    fn refresh_preview_with_binary_file(&mut self, content: String) {
-        self.right_entries = PreviewContent::File(FileContent::Binary(content));
-    }*/
+    fn delete_selected(&mut self) {
+        for path in &self.selected_pane().get_selected_paths() {
+            let result = if path.is_file() {
+                fs::remove_file(path)
+            } else {
+                fs::remove_dir_all(path)
+            };
 
-    fn set_clipboard_entries(&mut self) {
-        if self.selected_pane().mode == InteractionMode::Normal
-            && !self
-                .selected_pane()
-                .entries
-                .iter()
-                .any(|entry| entry.is_selected)
-        {
-            if let Some(current_selection) = self.selected_pane().selection.selected() {
-                if let Some(selected_item) =
-                    self.selected_pane_mut().entries.get_mut(current_selection)
-                {
-                    selected_item.is_selected = true;
-                }
+            if result.is_ok() {
+                self.popup = PopupType::None;
+                self.selected_pane_mut().refresh_directory();
+            } else if let Err(err) = result {
+                self.show_notification(format!("Failed to delete {:?}: {}", path, err));
             }
+        }
+    }
 
-            if let Some(entry) = self.selected_pane().get_selected_index_entry() {
-                self.clipboard.paths = vec![
-                    self.selected_pane()
-                        .path
-                        .join(&entry.name)
-                        .canonicalize()
-                        .unwrap(),
-                ];
+    fn rename_selected(&mut self, input: &str) {
+        if let Some(entry) = self.selected_pane().get_selected_index_entry() {
+            let path = self.selected_pane().path.clone();
+            let old_path = path.join(&entry.name);
+            let new_path = path.join(input.trim_end_matches('/'));
+
+            if fs::rename(&old_path, &new_path).is_ok() {
+                self.selected_pane_mut().refresh_directory();
+                self.popup = PopupType::None;
             }
-        } else {
-            self.clipboard.paths = self.selected_pane().get_selected_paths();
         }
     }
 
@@ -429,7 +349,7 @@ impl FileManager {
                 self.create_file(path);
             }
         }
-        self.selected_pane_mut().popup = PopupType::None;
+        self.close_confirmation_popup();
     }
 
     fn create_directory(&mut self, path: PathBuf) {
@@ -460,55 +380,49 @@ impl FileManager {
         });
     }
 
-    fn paste_clipboard(&mut self) {
-        let clipboard = self.clipboard.clone();
-        for src in clipboard.paths {
-            let dst = self.selected_pane().path.join(src.file_name().unwrap());
+    fn copy_selected_to_other_pane(&mut self) {
+        let src_entries = self.selected_pane().get_selected_paths();
+        for src in src_entries {
+            let dst = self.other_pane().path.join(src.file_name().unwrap());
             if src.is_file() {
-                match self.clipboard.action {
-                    Action::Move => {
-                        if fs::copy(&src, &dst).is_ok() {
-                            if let Err(e) = fs::remove_file(&src) {
-                                self.show_notification(e.to_string())
-                            }
-                        };
-                    }
-                    Action::Copy => {
-                        if let Err(e) = fs::copy(src, &dst) {
-                            self.show_notification(e.to_string())
-                        }
-                    }
-                    _ => {}
+                if let Err(e) = fs::copy(src, &dst) {
+                    self.show_notification(e.to_string())
                 }
             } else if src.is_dir() {
-                match self.clipboard.action {
-                    Action::Move => {
-                        if let Err(e) = move_file(&src, &dst) {
-                            self.show_notification(e.to_string())
-                        }
-                    }
-                    Action::Copy => {
-                        if let Err(e) = recursively_copy_dir(&src, &dst) {
-                            self.show_notification(e.to_string())
-                        }
-                    }
-                    _ => {}
+                if let Err(e) = recursively_copy_dir(&src, &dst) {
+                    self.show_notification(e.to_string())
                 }
             }
         }
+        
+        self.close_confirmation_popup();
+        self.other_pane_mut().refresh_directory();
+    }
+
+    fn move_selected_to_other_pane(&mut self) {
+        let src_entries = self.selected_pane().get_selected_paths();
+        for src in src_entries {
+            let dst = self.other_pane().path.join(src.file_name().unwrap());
+            if src.is_file() {
+                if fs::copy(&src, &dst).is_ok() {
+                    if let Err(e) = fs::remove_file(&src) {
+                        self.show_notification(e.to_string())
+                    }
+                }
+            } else if src.is_dir() {
+                if let Err(e) = move_file(&src, &dst) {
+                    self.show_notification(e.to_string())
+                }
+            }
+        }
+
+        self.close_confirmation_popup();
         self.selected_pane_mut().refresh_directory();
-
-        self.clipboard.action = Action::None
+        self.other_pane_mut().refresh_directory();
     }
 
-    fn copy_selected_entries(&mut self) {
-        self.clipboard.action = Action::Copy;
-        self.set_clipboard_entries();
-    }
-
-    fn move_selected_entries(&mut self) {
-        self.clipboard.action = Action::Move;
-        self.set_clipboard_entries();
+    fn close_confirmation_popup(&mut self) {
+        self.popup = PopupType::None;
     }
 } // FileManager
 
