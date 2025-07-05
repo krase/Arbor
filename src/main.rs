@@ -67,7 +67,7 @@ pub struct FilePane {
     path: PathBuf,
     entries: Vec<FsEntry>,
     selection: ListState, // Cursor
-    old_curser_pos: Option<usize>,
+    old_selection: ListState,
     notify: Option<Notification>,
 }
 
@@ -94,7 +94,7 @@ impl FilePane {
             path,
             entries,
             selection: ListState::default().with_selected(Some(0)),
-            old_curser_pos: None,
+            old_selection: ListState::default().with_selected(Some(0)),
             notify: None,
         }
     }

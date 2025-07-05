@@ -95,7 +95,7 @@ impl FileManager {
                     }
                     match key.code {
                         KeyCode::Tab => {
-                            self.handle_tab_normal_mode();
+                            self.handle_tab();
                         }
                         KeyCode::F(10) => break,
                         KeyCode::Down => self.selected_pane_mut().navigate_down(),
@@ -153,28 +153,30 @@ impl FileManager {
         Ok(())
     }
 
-    fn handle_tab_normal_mode(&mut self) {
+    fn handle_tab(&mut self) {
         // Switch between left and right pane
         self.selected_pane = if self.selected_pane == Selected::Left {
-            self.left_pane.old_curser_pos = self.left_pane.selection.selected();
+            self.left_pane.old_selection = self.left_pane.selection.clone();
             self.left_pane.selection.select(None);
-            if self.right_pane.old_curser_pos.is_none() {
+            *self.left_pane.selection.offset_mut() = self.left_pane.old_selection.offset();
+            if self.right_pane.old_selection.selected().is_none() {
                 self.right_pane.selection.select_first();
             } else {
                 self.right_pane
                     .selection
-                    .select(self.right_pane.old_curser_pos);
+                    .select(self.right_pane.old_selection.selected());
             }
             Selected::Right
         } else {
-            self.right_pane.old_curser_pos = self.right_pane.selection.selected();
+            self.right_pane.old_selection = self.right_pane.selection.clone();
             self.right_pane.selection.select(None);
-            if self.left_pane.old_curser_pos.is_none() {
+            *self.right_pane.selection.offset_mut() = self.right_pane.old_selection.offset();
+            if self.left_pane.old_selection.selected().is_none() {
                 self.left_pane.selection.select_first();
             } else {
                 self.left_pane
                     .selection
-                    .select(self.left_pane.old_curser_pos);
+                    .select(self.left_pane.old_selection.selected());
             }
             Selected::Left
         }
