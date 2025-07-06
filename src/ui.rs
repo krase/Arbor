@@ -74,6 +74,7 @@ impl FileManager {
 
             f.render_widget(Clear, area);
             f.render_widget(input_paragraph, area);
+            f.set_cursor_position(Position { x: area.x + self.cursor_pos + 1, y: area.y + 1})
         }
 
         if let PopupType::Create(_) = &self.popup {

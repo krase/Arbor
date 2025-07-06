@@ -84,6 +84,8 @@ pub struct FileManager {
     selected_pane: Selected,
 
     input_buffer: String,
+    cursor_pos: u16,
+    
     notify: Option<Notification>,
     popup: PopupType,
 }
@@ -255,6 +257,8 @@ impl FileManager {
             right_pane: FilePane::new(start_path.clone(), right_entries),
 
             input_buffer: String::new(),
+            cursor_pos: 0,
+            
             selected_pane: Selected::Right,
             notify: None,
             popup: PopupType::None,

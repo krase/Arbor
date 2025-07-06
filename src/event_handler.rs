@@ -1,5 +1,5 @@
 use crate::{FileManager, PopupType, Selected};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers, ModifierKeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -20,79 +20,7 @@ impl FileManager {
                 if let Event::Key(key) = event::read()? {
                     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('o') {}
                     let popup = self.popup.clone();
-                    match popup {
-                        PopupType::Delete(_) => {
-                            match key.code {
-                                KeyCode::Char('n') => {
-                                    self.close_confirmation_popup();
-                                }
-                                KeyCode::Char('y') => self.delete_selected(),
-                                _ => {}
-                            }
-                            continue;
-                        }
-                        PopupType::Rename(_) => {
-                            match key.code {
-                                KeyCode::Char(input) => {
-                                    self.input_buffer.push(input);
-                                }
-                                // Append character to input
-                                KeyCode::Backspace => {
-                                    self.input_buffer.pop();
-                                } // Remove last character
-                                KeyCode::Enter => {
-                                    let tmp = self.input_buffer.clone();
-                                    self.input_buffer.clear();
-                                    self.rename_selected(tmp.as_str());
-                                }
-                                KeyCode::Esc => self.close_confirmation_popup(),
-                                _ => {}
-                            }
-                            continue;
-                        }
-                        PopupType::Create(_) => {
-                            match key.code {
-                                KeyCode::Char(c) => {
-                                    self.input_buffer.push(c);
-                                }
-                                // Append character to input
-                                KeyCode::Backspace => {
-                                    self.input_buffer.pop();
-                                } // Remove last character
-                                KeyCode::Enter => {
-                                    self.create_entry(self.input_buffer.clone());
-                                }
-                                KeyCode::Esc => self.close_confirmation_popup(),
-                                _ => {}
-                            }
-                            continue;
-                        }
-                        PopupType::Copy(_) => {
-                            match key.code {
-                                KeyCode::Char('n') => {
-                                    self.close_confirmation_popup();
-                                }
-                                KeyCode::Char('y') => {
-                                    self.copy_selected_to_other_pane();
-                                }
-                                _ => {}
-                            }
-                            continue;
-                        }
-                        PopupType::Move(_) => {
-                            match key.code {
-                                KeyCode::Char('n') => {
-                                    self.close_confirmation_popup();
-                                }
-                                KeyCode::Char('y') => {
-                                    self.move_selected_to_other_pane();
-                                }
-                                _ => {}
-                            }
-                            continue;
-                        }
-                        PopupType::None => {}
-                    }
+                    if self.handle_popups(key, popup) { continue; }
                     match key.code {
                         KeyCode::Tab => {
                             self.handle_tab();
@@ -109,19 +37,25 @@ impl FileManager {
                         KeyCode::F(8) => {
                             self.popup = PopupType::Delete("Delete item".to_string());
                         }
-                        /* SHIFT + F(2)  => {
-                            if !self.selected_pane().entries.is_empty() {
-                                self.popup = PopupType::Rename
-                            }
-                        }*/
                         KeyCode::F(2) => {
                             self.popup = PopupType::Create("Create Item".to_string());
                         }
-                        // TODO Copy/Move from active pane to the inactive
                         KeyCode::F(5) => {
                             self.popup = PopupType::Copy("Copy selected".to_string());
                         }
-                        KeyCode::F(6) => self.popup = PopupType::Move("Move selected".to_string()),
+                        KeyCode::F(6) => {
+                            if let Some(entry) = self.selected_pane().get_selected_index_entry() {
+                                self.input_buffer = entry.name.clone();
+                                self.cursor_pos = self.input_buffer.chars().count() as u16;
+                            }
+                            if key.modifiers == KeyModifiers::SHIFT {
+                                if !self.selected_pane().entries.is_empty() {
+                                    self.popup = PopupType::Rename("Rename item".to_string());
+                                }
+                            } else {
+                                self.popup = PopupType::Move("Move selected".to_string())
+                            }
+                        },
                         KeyCode::Esc => self.selected_pane_mut().deselect_all(),
                         KeyCode::Char(' ') => {
                             if let Some(current_selection) =
@@ -135,7 +69,6 @@ impl FileManager {
                             }
                         }
                         //TODO
-                        // F9 Menu
                         // F1 Help
                         // F2 Function Menu
                         // F3 View
@@ -151,6 +84,126 @@ impl FileManager {
         }
 
         Ok(())
+    }
+
+    fn byte_index(&self) -> usize {
+        self.input_buffer
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(self.cursor_pos as usize)
+            .unwrap_or(self.input_buffer.len())
+    }
+
+    fn insert_char(&mut self, new_char: char) {
+        let index = self.byte_index();
+        self.input_buffer.insert(index, new_char);
+        self.move_cursor_right();
+    }
+
+    fn move_cursor_left(&mut self) {
+        self.cursor_pos = self.cursor_pos.saturating_sub(1);
+        self.cursor_pos = self.cursor_pos.clamp(0, self.input_buffer.chars().count() as u16);
+    }
+    
+    fn move_cursor_right(&mut self) {
+        self.cursor_pos = self.cursor_pos.saturating_add(1);
+        self.cursor_pos = self.cursor_pos.clamp(0, self.input_buffer.chars().count() as u16);
+    }
+
+    fn delete_char(&mut self) {
+        let is_not_cursor_leftmost = self.cursor_pos != 0;
+        if is_not_cursor_leftmost {
+            // Method "remove" is not used on the saved text for deleting the selected char.
+            // Reason: Using remove on String works on bytes instead of the chars.
+            // Using remove would require special care because of char boundaries.
+
+            let current_pos = self.cursor_pos as usize;
+            let from_left_to_current_index = current_pos - 1;
+
+            // Getting all characters before the selected character.
+            let before_char_to_delete = self.input_buffer.chars().take(from_left_to_current_index);
+            // Getting all characters after selected character.
+            let after_char_to_delete = self.input_buffer.chars().skip(current_pos);
+
+            // Put all characters together except the selected one.
+            // By leaving the selected one out, it is forgotten and therefore deleted.
+            self.input_buffer = before_char_to_delete.chain(after_char_to_delete).collect();
+        }
+    }
+
+
+    fn handle_popups(&mut self, key: KeyEvent, popup: PopupType) -> bool {
+        match popup {
+            PopupType::Create(_) | PopupType::Rename(_) => {
+                match key.code {
+                    KeyCode::Left => {
+                        self.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        self.move_cursor_right();
+                    }
+                    KeyCode::Backspace => {
+                        self.delete_char();
+                        self.move_cursor_left();
+                    } // Remove last character
+                    KeyCode::Delete => {
+                        if (self.cursor_pos as usize) < self.input_buffer.len() {
+                            self.move_cursor_right();
+                            self.delete_char();
+                            self.move_cursor_left();
+                        }
+                    }
+                    KeyCode::Char(input) => {
+                        // Append character to input
+                        self.insert_char(input);
+                    }
+                    KeyCode::Enter => {
+                        let tmp = self.input_buffer.clone();
+                        self.input_buffer.clear();
+                        self.rename_selected(tmp.as_str());
+                    }
+                    KeyCode::Esc => self.close_confirmation_popup(),
+                    _ => {}
+                }
+                return true;
+            }
+            PopupType::Delete(_) => {
+                match key.code {
+                    KeyCode::Char('n') => {
+                        self.close_confirmation_popup();
+                    }
+                    KeyCode::Char('y') => self.delete_selected(),
+                    _ => {}
+                }
+                return true;
+            }
+            PopupType::Copy(_) => {
+                match key.code {
+                    KeyCode::Char('n') => {
+                        self.close_confirmation_popup();
+                    }
+                    KeyCode::Char('y') => {
+                        self.copy_selected_to_other_pane();
+                    }
+                    _ => {}
+                }
+                return true;
+            }
+            PopupType::Move(_) => {
+                match key.code {
+                    KeyCode::Char('n') => {
+                        self.close_confirmation_popup();
+                    }
+                    KeyCode::Char('y') => {
+                        self.move_selected_to_other_pane();
+                    }
+                    _ => {}
+                }
+                return true;
+            }
+            PopupType::None => {}
+        }
+        false
     }
 
     fn handle_tab(&mut self) {
