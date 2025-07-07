@@ -154,6 +154,12 @@ pub fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
 
 pub fn bottom_right_area(area: Rect, width: u16, height: u16) -> Rect {
     let x = area.x + area.width.saturating_sub(width);
+    let y = area.y + area.height.saturating_sub(height) - 2;
+    Rect::new(x, y, width, height)
+}
+
+pub fn bottom_left_area(area: Rect, width: u16, height: u16) -> Rect {
+    let x = area.x;
     let y = area.y + area.height.saturating_sub(height);
     Rect::new(x, y, width, height)
 }

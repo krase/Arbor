@@ -1,4 +1,5 @@
-use crate::utils::{bottom_right_area, format_size, mode_to_string, popup_area};
+use std::ops::Add;
+use crate::utils::{bottom_left_area, bottom_right_area, format_size, mode_to_string, popup_area};
 use crate::{Action, FileManager, FilePane, FsEntryType, PopupType};
 use ratatui::prelude::*;
 use ratatui::{
@@ -42,7 +43,10 @@ impl FilePane {
 impl FileManager {
     pub fn render(&mut self, f: &mut Frame) {
         let v_layout =
-            Layout::vertical([Constraint::Min(5), Constraint::Length(1)]).split(f.area());
+            Layout::vertical([
+                Constraint::Min(5),
+                Constraint::Length(2)
+            ]).split(f.area());
 
         /*let bars_layout = Layout::horizontal(
             [Constraint::Percentage(50), Constraint::Percentage(50)]
@@ -93,15 +97,22 @@ impl FileManager {
         }
 
         // Render notification if available
-        if let Some(noti) = &selected_pane.notify {
-            let area = bottom_right_area(v_layout[1], 35, 5);
+        if let Some(noti) = &self.notify {
+            let area = bottom_right_area(v_layout[1], 35, 3);
 
             let block = Block::bordered()
                 .border_type(Rounded)
                 .title("Notification")
                 .style(Style::default().fg(Color::Yellow));
 
-            let text = Paragraph::new(&*noti.message)
+            let mut msg = String::from(noti.message.clone());
+            if let Some(selected_noti) = &self.selected_pane().notify {
+                let tmp = selected_noti.message.as_str();
+                msg = String::from(tmp);
+                msg += " ";
+                msg += tmp;
+            }
+            let text = Paragraph::new(msg)
                 .style(Style::default().fg(Color::Yellow))
                 .bg(Color::Black)
                 .alignment(Alignment::Center)

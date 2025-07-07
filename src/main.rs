@@ -85,6 +85,7 @@ pub struct FileManager {
 
     input_buffer: String,
     cursor_pos: u16,
+    search_prefix: String,
     
     notify: Option<Notification>,
     popup: PopupType,
@@ -258,6 +259,7 @@ impl FileManager {
 
             input_buffer: String::new(),
             cursor_pos: 0,
+            search_prefix: "".to_string(),
             
             selected_pane: Selected::Right,
             notify: None,
@@ -383,6 +385,15 @@ impl FileManager {
             duration: Duration::from_secs(3),
         });
     }
+
+    fn clear_expired_notifications(&mut self) {
+        if let Some(noti) = &self.notify {
+            if noti.created_at.elapsed() >= noti.duration {
+                self.notify = None;
+            }
+        }
+    }
+
 
     fn copy_selected_to_other_pane(&mut self) {
         let src_entries = self.selected_pane().get_selected_paths();

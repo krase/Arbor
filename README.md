@@ -86,8 +86,8 @@ cargo run
 ```
 
 # TODO
-* Search on type
-* Better dialogs
+* asyn support? or thread on operation?
+* operation progresses
 * Shell mode with ctrl-o
 * F2 for zip/tar etc.
 * F3 for view

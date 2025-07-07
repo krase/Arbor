@@ -6,6 +6,7 @@ use crossterm::terminal::{
 };
 use ratatui::DefaultTerminal;
 use std::io;
+use std::ops::Add;
 use std::time::Duration;
 
 impl FileManager {
@@ -20,15 +21,23 @@ impl FileManager {
                 if let Event::Key(key) = event::read()? {
                     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('o') {}
                     let popup = self.popup.clone();
+
                     if self.handle_popups(key, popup) { continue; }
+
                     match key.code {
                         KeyCode::Tab => {
                             self.handle_tab();
                         }
                         KeyCode::F(10) => break,
                         KeyCode::Down => self.selected_pane_mut().navigate_down(),
-                        KeyCode::Up => self.selected_pane_mut().navigate_up(),
-                        KeyCode::Left | KeyCode::Backspace => {
+                        KeyCode::Up => {
+                            if key.modifiers == KeyModifiers::ALT {
+                                self.selected_pane_mut().navigate_to_parent();
+                            } else {
+                                self.selected_pane_mut().navigate_up();
+                            }
+                        },
+                        KeyCode::Left=> {
                             self.selected_pane_mut().navigate_to_parent()
                         }
                         KeyCode::Right | KeyCode::Enter => {
@@ -56,7 +65,13 @@ impl FileManager {
                                 self.popup = PopupType::Move("Move selected".to_string())
                             }
                         },
-                        KeyCode::Esc => self.selected_pane_mut().deselect_all(),
+                        KeyCode::Esc => {
+                            self.selected_pane_mut().deselect_all();
+                            self.search_prefix = "".to_string();
+                        },
+                        KeyCode::Backspace => {
+                            self.search_prefix.pop();
+                        }
                         KeyCode::Char(' ') => {
                             if let Some(current_selection) =
                                 self.selected_pane().selection.selected()
@@ -67,6 +82,18 @@ impl FileManager {
                                     selected_item.is_selected ^= true;
                                 }
                             }
+                        }
+                        KeyCode::Char(c) => {
+                            //println!("--- {}", c);
+                            self.search_prefix += format!("{}", c).as_str();
+                            let entries = self.selected_pane().entries.iter().enumerate().find(|(pos, x)| {
+                                x.name.starts_with(self.search_prefix.as_str())
+                            });
+                            //println!("{:?} {}", entries, &self.search_index);
+                            if let Some((pos,x)) = entries {
+                                self.selected_pane_mut().selection.select(Some(pos));
+                            }
+                            self.show_notification(format!("{}", self.search_prefix));
                         }
                         //TODO
                         // F1 Help
@@ -80,22 +107,23 @@ impl FileManager {
             } else {
                 self.left_pane.clear_expired_notifications();
                 self.right_pane.clear_expired_notifications();
+                self.clear_expired_notifications();
             }
         }
 
         Ok(())
     }
 
-    fn byte_index(&self) -> usize {
-        self.input_buffer
+    fn byte_index(&self, buffer: &String, pos: usize) -> usize {
+        buffer
             .char_indices()
             .map(|(i, _)| i)
-            .nth(self.cursor_pos as usize)
-            .unwrap_or(self.input_buffer.len())
+            .nth(pos)
+            .unwrap_or(buffer.len())
     }
 
     fn insert_char(&mut self, new_char: char) {
-        let index = self.byte_index();
+        let index = self.byte_index(&self.input_buffer, self.cursor_pos as usize);
         self.input_buffer.insert(index, new_char);
         self.move_cursor_right();
     }
